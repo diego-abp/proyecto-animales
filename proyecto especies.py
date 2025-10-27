@@ -18,3 +18,14 @@ class carnivoro(especies):
     def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
         super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
 
+class hervivoro(especies):
+    def __init__(self, x, y, vida, reproducirse, salto, correr, comer):
+        super().__init__(self, x, y, vida, reproducirse, salto, correr, comer)
+
+class homniboro(especies):
+    def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
+        super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
+
+    
+
+

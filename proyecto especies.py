@@ -9,8 +9,12 @@ class especies:
         self.posicion_y = y
         self.vida = vida
         self.reproducirse = reproducirse
-        self.salto = salto
+        self.salto = 5
         self.atacar = atacar 
         self.correr = correr
         self.comer = False    
-        self.dormir = False
+
+class carnivoro(especies):
+    def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
+        super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
+

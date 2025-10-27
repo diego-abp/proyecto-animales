@@ -13,3 +13,4 @@ class especies:
         self.atacar = atacar 
         self.correr = correr
         self.comer = False    
+        self.dormir = False

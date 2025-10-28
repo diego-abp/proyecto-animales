@@ -26,7 +26,8 @@ class homniboro(especies):
     def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
         super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
 # prubeba de commit
-# prueba 2 de commit
+# prueba commit 2
+
 
     
 

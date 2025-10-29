@@ -25,8 +25,7 @@ class hervivoro(especies):
 class homniboro(especies):
     def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
         super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
-# prueba
-
+# prubeba de commit
 
     
 

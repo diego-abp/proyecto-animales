@@ -11,24 +11,24 @@ class especies:
         self.reproducirse = reproducirse
         self.salto = 5
         self.atacar = atacar 
-        self.correr = correr
+        self.correr = False
         self.comer = False    
 
 class carnivoro(especies):
-    def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
-        super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
+    def __intit__(self, x, y, vida, reproducirse, salto, atacar, false, false):
+        super().__init__(self, x, y, vida, reproducirse, salto, atacar, false, false)
 
 class hervivoro(especies):
-    def __init__(self, x, y, vida, reproducirse, salto, correr, comer):
-        super().__init__(self, x, y, vida, reproducirse, salto, correr, comer)
+    def __init__(self, x, y, vida, reproducirse, salto, false, false):
+        super().__init__(self, x, y, vida, reproducirse, salto, false,false)
 
 class homniboro(especies):
-    def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
-        super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
+    def __intit__(self, x, y, vida, reproducirse, salto, atacar, false, false):
+        super().__init__(self, x, y, vida, reproducirse, salto, atacar, false, false)
 # prubeba de commit
 class planta(especies):
-    def __init__(self, x, y, vida, reproducirse, comer):
-        super().__init__(self, x, y, vida, reproducirse, comer)
+    def __init__(self, x, y, vida, reproducirse, ):
+        super().__init__(self, x, y, vida, reproducirse, )
 
 class Personaje:
 	def __init__(self, x, y, vida):

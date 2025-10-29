@@ -33,3 +33,8 @@ class planta(especies):
 class insecto(especies):
     def __init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
         super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
+
+def movimiento(self):
+        
+
+

@@ -26,7 +26,10 @@ class homniboro(especies):
     def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
         super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
 # prubeba de commit
-# poj
+class planta(especies):
+    def __init__(self, x, y, vida, reproducirse, comer):
+        super().__init__(self, x, y, vida, reproducirse, comer)
 
-
-# poj
+class insecto(especies):
+    def __init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
+        super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)

@@ -34,7 +34,7 @@ class insecto(especies):
     def __init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
         super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
 
-def movimiento(self):
+def mover_arriba(self):
 
 
 
@@ -63,8 +63,8 @@ class VistaSimple:
         self.panel.Bind(wx.EVT_PAINT, self.on_paint)
         self.panel.SetFocus()
         
-        self.personaje = Personaje(250, 200, 100)
-        self.monstruo = Monstruo(10, 200, 100, 100)
+        self.carnivoro = carnivoro(250, 200, 100)
+        self.hervivoro = hervivoro(10, 200, 100, 100)
         
         self.instrucciones = wx.StaticText(self.panel, pos=(10, 10), 
             label="Flechas/WASD = mover, ESC = salir")

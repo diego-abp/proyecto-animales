@@ -98,7 +98,7 @@ class VistaSimple:
         
         self.carnivoro = carnivoro(250, 200, 100)
         self.hervivoro = hervivoro(10, 200, 100, 100)
-        
+        self.Personaje = Personaje (200, 200, 100)
         self.instrucciones = wx.StaticText(self.panel, pos=(10, 10), 
             label="Flechas/WASD = mover, ESC = salir")
         self.instrucciones.SetForegroundColour('blue')

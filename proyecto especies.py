@@ -156,7 +156,7 @@ if __name__ == "__main__":
     print("=== Juego en 2 capas Lógica y Vista ===")
     juego = VistaSimple()
     juego.iniciar()
-
+#hola 
 
     
         

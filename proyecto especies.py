@@ -35,6 +35,7 @@ class insecto(especies):
         super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
 
 def movimiento(self):
+    
         
 
 

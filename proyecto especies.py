@@ -30,24 +30,63 @@ class planta(especies):
     def __init__(self, x, y, vida, reproducirse, comer):
         super().__init__(self, x, y, vida, reproducirse, comer)
 
-def mover_arriba(self):
+class Personaje:
+	def __init__(self, x, y, vida):
+		self.posicion_x = x
+		self.posicion_y = y
+		self.vida = vida
+		self.salto = 5
+		self.escudo_activo = False
+		self.velocidad_extra = 0
+		self.ticks_velocidad = 0
 
+	def mover_arriba(self):
+		salto = self.salto + self.velocidad_extra
+		if(self.posicion_y >0):
+			self.posicion_y = self.posicion_y - salto
+		else:
+			self.posicion_y = 200
+			self.posicion_x = 250
+            
+	def mover_abajo(self):
+		salto = self.salto + self.velocidad_extra
+		if(self.posicion_y <360):
+			self.posicion_y = self.posicion_y + salto
+		else:
+			self.posicion_y = 200
+			self.posicion_x = 250
+            
+	def mover_derecha(self):
+		salto = self.salto + self.velocidad_extra
+		if (self.posicion_x < 490):
+			self.posicion_x = self.posicion_x + salto
+		else:
+			self.posicion_x = 250
+			self.posicion_y = 200
+            
+	def mover_izquierda(self):
+		salto = self.salto + self.velocidad_extra
+		if (self.posicion_x > 0):
+			self.posicion_x = self.posicion_x - salto
+		else:
+			self.posicion_x = 250
+			self.posicion_y = 200
+	def activar_escudo(self):
+		self.escudo_activo = True
 
+	def desactivar_escudo(self):
+		self.escudo_activo = False
 
+	def activar_velocidad_extra(self):
+		self.velocidad_extra = 2
+		self.ticks_velocidad = 10  # dura 10 movimientos
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+	def tick_velocidad(self):
+		if self.ticks_velocidad > 0:
+			self.ticks_velocidad -= 1
+			if self.ticks_velocidad == 0:
+				self.velocidad_extra = 0
+                        
 class VistaSimple:
     def __init__(self):
         self.app = wx.App()

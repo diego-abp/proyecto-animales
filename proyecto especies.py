@@ -29,3 +29,99 @@ class homniboro(especies):
 class planta(especies):
     def __init__(self, x, y, vida, reproducirse, comer):
         super().__init__(self, x, y, vida, reproducirse, comer)
+
+def mover_arriba(self):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class VistaSimple:
+    def __init__(self):
+        self.app = wx.App()
+        self.ventana = wx.Frame(None, title="Juego", size=(500, 400))
+        self.panel = wx.Panel(self.ventana)
+        
+        # CAMBIO IMPORTANTE: Usar EVT_CHAR_HOOK en lugar de EVT_KEY_DOWN
+        self.panel.Bind(wx.EVT_CHAR_HOOK, self.on_key_down)
+        self.panel.Bind(wx.EVT_PAINT, self.on_paint)
+        self.panel.SetFocus()
+        
+        self.carnivoro = carnivoro(250, 200, 100)
+        self.hervivoro = hervivoro(10, 200, 100, 100)
+        
+        self.instrucciones = wx.StaticText(self.panel, pos=(10, 10), 
+            label="Flechas/WASD = mover, ESC = salir")
+        self.instrucciones.SetForegroundColour('blue')
+        self.ventana.Centre()
+        self.ventana.Show()
+
+    def on_paint(self, event):
+        dc = wx.PaintDC(self.panel)
+        dc.SetBackground(wx.Brush('white'))
+        dc.Clear()
+        dc.DrawText(f"X: {self.personaje.posicion_x}, Y: {self.personaje.posicion_y}", 10, 40)
+        dc.SetBrush(wx.Brush('green'))
+        dc.DrawCircle(self.personaje.posicion_x, self.personaje.posicion_y, 15)
+        dc.SetBrush(wx.Brush('red'))
+        if self.monstruo.vida > 0:
+            dc.DrawCircle(self.monstruo.posicion_x, self.monstruo.posicion_y, 15)
+    
+    def on_key_down(self, event):
+        keycode = event.GetKeyCode()
+        print(f"tecla-->{keycode}")
+        
+        # Flechas direccionales
+        if keycode == wx.WXK_UP:
+            print("¡Flecha Arriba!")
+            self.personaje.mover_arriba()
+        elif keycode == wx.WXK_DOWN:
+            print("¡Flecha Abajo!")
+            self.personaje.mover_abajo()
+        elif keycode == wx.WXK_LEFT:
+            print("¡Flecha Izquierda!")
+            self.personaje.mover_izquierda()
+        elif keycode == wx.WXK_RIGHT:
+            print("¡Flecha Derecha!")
+            self.personaje.mover_derecha()
+        # WASD
+        elif keycode == ord('W') or keycode == ord('w'):
+            self.personaje.mover_arriba()
+        elif keycode == ord('S') or keycode == ord('s'):
+            self.personaje.mover_abajo()
+        elif keycode == ord('A') or keycode == ord('a'):
+            self.personaje.mover_izquierda()
+        elif keycode == ord('D') or keycode == ord('d'):
+            self.personaje.mover_derecha()
+        elif keycode == wx.WXK_ESCAPE:
+            self.ventana.Close()
+            return
+        
+        self.panel.Refresh()
+        event.Skip()  # Importante para EVT_CHAR_HOOK
+
+    def iniciar(self):
+        self.app.MainLoop()
+
+if __name__ == "__main__":
+    print("=== Juego en 2 capas Lógica y Vista ===")
+    juego = VistaSimple()
+    juego.iniciar()
+
+
+    
+        
+
+

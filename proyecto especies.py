@@ -26,7 +26,9 @@ class homniboro(especies):
     def __intit__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
         super().__init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer)
 # prubeba de commit
-# poj
+class planta(especies):
+    def __init__(self, x, y, vida, reproducirse, comer):
+        super().__init__(self, x, y, vida, reproducirse, comer)
 
 class Personaje:
 	def __init__(self, x, y, vida):
@@ -84,7 +86,12 @@ class Personaje:
 			self.ticks_velocidad -= 1
 			if self.ticks_velocidad == 0:
 				self.velocidad_extra = 0
-                        
+
+class Caballero(Personaje):
+	def __init__(self, x, y, vida, defensa):
+		super().__init__(x,y,vida)
+		self.defensa = defensa
+
 class VistaSimple:
     def __init__(self):
         self.app = wx.App()

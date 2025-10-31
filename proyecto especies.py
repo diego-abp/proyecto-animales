@@ -119,7 +119,7 @@ class VistaSimple:
         
         # Dibujar el personaje
         dc.DrawText(f"X: {self.personaje.posicion_x}, Y: {self.personaje.posicion_y}", 10, 40)
-        dc.SetBrush(wx.Brush('green'))
+        dc.SetBrush(wx.Brush('blue'))
         dc.DrawCircle(self.personaje.posicion_x, self.personaje.posicion_y, 15)
         
         # Dibujar el carnívoro
@@ -127,7 +127,7 @@ class VistaSimple:
         dc.DrawCircle(self.carnivoro.posicion_x, self.carnivoro.posicion_y, 15)
         
         # Dibujar el herbívoro
-        dc.SetBrush(wx.Brush('blue'))
+        dc.SetBrush(wx.Brush('green'))
         dc.DrawCircle(self.herbivoro.posicion_x, self.herbivoro.posicion_y, 15)
     
     def on_key_down(self, event):

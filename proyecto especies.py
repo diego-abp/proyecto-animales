@@ -3,32 +3,32 @@ import math
 import time
 import random
 
-class especies:
-    def __init__(self, x, y, vida, reproducirse, salto, atacar, correr, comer):
+class Especies:
+    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False):
         self.posicion_x = x
         self.posicion_y = y
         self.vida = vida
         self.reproducirse = reproducirse
-        self.salto = 5
+        self.salto = salto
         self.atacar = atacar 
-        self.correr = False
-        self.comer = False    
+        self.correr = correr
+        self.comer = comer    
 
-class carnivoro(especies):
-    def __intit__(self, x, y, vida, reproducirse, salto, atacar, false, false):
-        super().__init__(self, x, y, vida, reproducirse, salto, atacar, false, false)
+class Carnivoro(Especies):
+    def __init__(self, x, y, vida, reproducirse=True, salto=5):
+        super().__init__(x, y, vida, reproducirse, salto, True, True, True)
 
-class hervivoro(especies):
-    def __init__(self, x, y, vida, reproducirse, salto, false, false):
-        super().__init__(self, x, y, vida, reproducirse, salto, false, false)
+class Herbivoro(Especies):
+    def __init__(self, x, y, vida, reproducirse=True, salto=5):
+        super().__init__(x, y, vida, reproducirse, salto, False, True, True)
 
-class homniboro(especies):
-    def __intit__(self, x, y, vida, reproducirse, salto, atacar, false, false):
-        super().__init__(self, x, y, vida, reproducirse, salto, atacar, false, false)
-# prubeba de commit
-class planta(especies):
-    def __init__(self, x, y, vida, reproducirse, ):
-        super().__init__(self, x, y, vida, reproducirse, )
+class Omnivoro(Especies):
+    def __init__(self, x, y, vida, reproducirse=True, salto=5):
+        super().__init__(x, y, vida, reproducirse, salto, True, True, True)
+
+class Planta(Especies):
+    def __init__(self, x, y, vida, reproducirse=True):
+        super().__init__(x, y, vida, reproducirse, 0, False, False, False)
 
 class Personaje:
 	def __init__(self, x, y, vida):
@@ -103,9 +103,9 @@ class VistaSimple:
         self.panel.Bind(wx.EVT_PAINT, self.on_paint)
         self.panel.SetFocus()
         
-        self.carnivoro = carnivoro(250, 200, 100)
-        self.hervivoro = hervivoro(10, 200, 100, 100)
-        self.Personaje = Personaje (200, 200, 100)
+        self.carnivoro = Carnivoro(250, 200, 100)
+        self.herbivoro = Herbivoro(10, 200, 100)
+        self.personaje = Personaje(200, 200, 100)
         self.instrucciones = wx.StaticText(self.panel, pos=(10, 10), 
             label="Flechas/WASD = mover, ESC = salir")
         self.instrucciones.SetForegroundColour('blue')
@@ -116,12 +116,19 @@ class VistaSimple:
         dc = wx.PaintDC(self.panel)
         dc.SetBackground(wx.Brush('white'))
         dc.Clear()
+        
+        # Dibujar el personaje
         dc.DrawText(f"X: {self.personaje.posicion_x}, Y: {self.personaje.posicion_y}", 10, 40)
         dc.SetBrush(wx.Brush('green'))
         dc.DrawCircle(self.personaje.posicion_x, self.personaje.posicion_y, 15)
+        
+        # Dibujar el carnívoro
         dc.SetBrush(wx.Brush('red'))
-        if self.monstruo.vida > 0:
-            dc.DrawCircle(self.monstruo.posicion_x, self.monstruo.posicion_y, 15)
+        dc.DrawCircle(self.carnivoro.posicion_x, self.carnivoro.posicion_y, 15)
+        
+        # Dibujar el herbívoro
+        dc.SetBrush(wx.Brush('blue'))
+        dc.DrawCircle(self.herbivoro.posicion_x, self.herbivoro.posicion_y, 15)
     
     def on_key_down(self, event):
         keycode = event.GetKeyCode()

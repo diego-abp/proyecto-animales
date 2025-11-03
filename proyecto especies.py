@@ -32,61 +32,64 @@ class Planta(Especies):
         super().__init__(x, y, vida, reproducirse, 0, False, False, False)
 
 class Personaje:
-	def __init__(self, x, y, vida):
-		self.posicion_x = x
-		self.posicion_y = y
-		self.vida = vida
-		self.salto = 5
-		self.escudo_activo = False
-		self.velocidad_extra = 0
-		self.ticks_velocidad = 0
+    def __init__(self, x, y, vida):
+        self.posicion_x = x
+        self.posicion_y = y
+        self.vida = vida
+        # velocidad base (píxeles por frame). Reducida para movimiento más lento.
+        self.salto = 2
+        self.escudo_activo = False
+        self.velocidad_extra = 0
+        self.ticks_velocidad = 0
 
-	def mover_arriba(self):
-		salto = self.salto + self.velocidad_extra
-		if(self.posicion_y >0):
-			self.posicion_y = self.posicion_y - salto
-		else:
-			self.posicion_y = 200
-			self.posicion_x = 250
-            
-	def mover_abajo(self):
-		salto = self.salto + self.velocidad_extra
-		if(self.posicion_y <360):
-			self.posicion_y = self.posicion_y + salto
-		else:
-			self.posicion_y = 200
-			self.posicion_x = 250
-            
-	def mover_derecha(self):
-		salto = self.salto + self.velocidad_extra
-		if (self.posicion_x < 490):
-			self.posicion_x = self.posicion_x + salto
-		else:
-			self.posicion_x = 250
-			self.posicion_y = 200
-            
-	def mover_izquierda(self):
-		salto = self.salto + self.velocidad_extra
-		if (self.posicion_x > 0):
-			self.posicion_x = self.posicion_x - salto
-		else:
-			self.posicion_x = 250
-			self.posicion_y = 200
-	def activar_escudo(self):
-		self.escudo_activo = True
+    def mover_arriba(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_y > 0:
+            self.posicion_y = self.posicion_y - salto
+        else:
+            self.posicion_y = 200
+            self.posicion_x = 250
 
-	def desactivar_escudo(self):
-		self.escudo_activo = False
+    def mover_abajo(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_y < 360:
+            self.posicion_y = self.posicion_y + salto
+        else:
+            self.posicion_y = 200
+            self.posicion_x = 250
 
-	def activar_velocidad_extra(self):
-		self.velocidad_extra = 2
-		self.ticks_velocidad = 10  # dura 10 movimientos
+    def mover_derecha(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_x < 490:
+            self.posicion_x = self.posicion_x + salto
+        else:
+            self.posicion_x = 250
+            self.posicion_y = 200
 
-	def tick_velocidad(self):
-		if self.ticks_velocidad > 0:
-			self.ticks_velocidad -= 1
-			if self.ticks_velocidad == 0:
-				self.velocidad_extra = 0
+    def mover_izquierda(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_x > 0:
+            self.posicion_x = self.posicion_x - salto
+        else:
+            self.posicion_x = 250
+            self.posicion_y = 200
+
+    def activar_escudo(self):
+        self.escudo_activo = True
+
+    def desactivar_escudo(self):
+        self.escudo_activo = False
+
+    def activar_velocidad_extra(self):
+        # bono de velocidad temporal (mantener pequeño para no romper la sensación)
+        self.velocidad_extra = 1
+        self.ticks_velocidad = 10  # dura 10 movimientos
+
+    def tick_velocidad(self):
+        if self.ticks_velocidad > 0:
+            self.ticks_velocidad -= 1
+            if self.ticks_velocidad == 0:
+                self.velocidad_extra = 0
 
 class Caballero(Personaje):
 	def __init__(self, x, y, vida, defensa):
@@ -112,6 +115,7 @@ class VistaPygame:
         # Entidades
         self.carnivoro = Carnivoro(250, 200, 100)
         self.herbivoro = Herbivoro(10, 200, 100)
+        self.omnivoro = Omnivoro(400, 200, 100)
         self.personaje = Personaje(200, 200, 100)
 
         # Fuente para texto
@@ -155,6 +159,12 @@ class VistaPygame:
 
         # Herbívoro
         pygame.draw.circle(self.screen, (0, 200, 0), (int(self.herbivoro.posicion_x), int(self.herbivoro.posicion_y)), 15)
+
+        # Omnívoro: dibujar como cuadrado morado
+        omni_size = 20
+        omni_x = int(self.omnivoro.posicion_x) - omni_size // 2
+        omni_y = int(self.omnivoro.posicion_y) - omni_size // 2
+        pygame.draw.rect(self.screen, (128, 0, 128), (omni_x, omni_y, omni_size, omni_size))
 
         # Instrucciones
         instrucciones = self.font.render("Flechas/WASD = mover, ESC = salir", True, (0, 0, 150))

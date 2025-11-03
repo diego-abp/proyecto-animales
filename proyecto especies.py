@@ -144,7 +144,8 @@ class VistaPygame:
             # CORRECCIÓN: Se carga la imagen, se establece el color verde (0, 255, 0) como transparente
             # y luego se convierte para un rendimiento óptimo.
             spritesheet = pygame.image.load("assets/sprites/player.png")
-            spritesheet.set_colorkey((0, 255, 0)) # RGB para el verde del fondo
+            # CORRECCIÓN: El color de fondo es un verde azulado (teal), no verde puro.
+            spritesheet.set_colorkey((0, 128, 128))
             spritesheet = spritesheet.convert_alpha()
 
             def get_scaled_image(x, y, w, h, scale_factor=1.5):

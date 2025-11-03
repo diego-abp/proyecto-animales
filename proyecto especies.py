@@ -16,15 +16,15 @@ class Especies:
         self.comer = comer    
 
 class Carnivoro(Especies):
-    def __init__(self, x, y, vida, reproducirse=True, salto=5):
+    def __init__(self, x, y, vida, reproducirse=True, salto=4):
         super().__init__(x, y, vida, reproducirse, salto, True, True, True)
 
 class Herbivoro(Especies):
-    def __init__(self, x, y, vida, reproducirse=True, salto=5):
+    def __init__(self, x, y, vida, reproducirse=True, salto=4):
         super().__init__(x, y, vida, reproducirse, salto, False, True, True)
 
 class Omnivoro(Especies):
-    def __init__(self, x, y, vida, reproducirse=True, salto=5):
+    def __init__(self, x, y, vida, reproducirse=True, salto=4):
         super().__init__(x, y, vida, reproducirse, salto, True, True, True)
 
 class Planta(Especies):
@@ -38,6 +38,7 @@ class Personaje:
         # velocidad base (píxeles por frame). Reducida para movimiento más lento.
         self.salto = 2
         self.escudo_activo = False
+<<<<<<< HEAD
         self.direction = 'down' # Dirección inicial
         self.is_moving = False
         # Atributos para la animación
@@ -74,14 +75,47 @@ class Personaje:
         self.direction = 'right'
         self.is_moving = True
 
+=======
+        self.velocidad_extra = 0
+        self.ticks_velocidad = 0
+
+    def mover_arriba(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_y > 0:
+            self.posicion_y = self.posicion_y - salto
+        else:
+            self.posicion_y = 200
+            self.posicion_x = 250
+
+    def mover_abajo(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_y < 360:
+            self.posicion_y = self.posicion_y + salto
+        else:
+            self.posicion_y = 200
+            self.posicion_x = 250
+
+    def mover_derecha(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_x < 490:
+            self.posicion_x = self.posicion_x + salto
+        else:
+            self.posicion_x = 250
+            self.posicion_y = 200
+
+>>>>>>> origin/main
     def mover_izquierda(self):
         salto = self.salto + self.velocidad_extra
         if self.posicion_x > 0:
             self.posicion_x = self.posicion_x - salto
         else:
             self.posicion_x = 250
+<<<<<<< HEAD
         self.direction = 'left'
         self.is_moving = True
+=======
+            self.posicion_y = 200
+>>>>>>> origin/main
 
     def activar_escudo(self):
         self.escudo_activo = True

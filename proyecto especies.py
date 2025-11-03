@@ -140,53 +140,57 @@ class VistaPygame:
 
     def _cargar_sprites_jugador(self):
         """Carga, recorta y escala los sprites del jugador desde la hoja de sprites."""
+        # --- REESCRITURA COMPLETA PARA IMPORTAR SPRITES CORRECTAMENTE ---
         try:
-            # CORRECCIÓN: Se carga la imagen, se establece el color verde (0, 255, 0) como transparente
-            # y luego se convierte para un rendimiento óptimo.
-            spritesheet = pygame.image.load("assets/sprites/player.png")
-            # CORRECCIÓN: El color de fondo es un verde azulado (teal), no verde puro.
-            spritesheet.set_colorkey((0, 128, 128))
-            spritesheet = spritesheet.convert_alpha()
+            spritesheet = pygame.image.load("assets/sprites/player.png").convert_alpha()
+            
+            # Limpiar el fondo de la hoja de sprites
+            spritesheet_limpia = pygame.Surface(spritesheet.get_size(), pygame.SRCALPHA)
+            for x in range(spritesheet.get_width()):
+                for y in range(spritesheet.get_height()):
+                    color_pixel = spritesheet.get_at((x, y))
+                    # Eliminar el color de fondo (verde azulado)
+                    if color_pixel[:3] != (0, 128, 128) and color_pixel[:3] != (0, 64, 64):
+                        spritesheet_limpia.set_at((x, y), color_pixel)
 
-            def get_scaled_image(x, y, w, h, scale_factor=1.5):
-                """Función auxiliar para recortar y escalar un sprite."""
-                sprite = spritesheet.subsurface(pygame.Rect(x, y, w, h))
-                nuevo_ancho = int(w * scale_factor)
-                nuevo_alto = int(h * scale_factor)
-                return pygame.transform.scale(sprite, (nuevo_ancho, nuevo_alto))
-
-            # Coordenadas precisas para cada animación en la hoja de sprites
-            # Formato: (x_inicial, y, ancho, alto, numero_de_fotogramas, espacio_horizontal)
-            # CORRECCIÓN: Se ajustan las claves y coordenadas para que coincidan con los sprites.
+            # Coordenadas de las animaciones a cargar directamente
             anim_coords = {
-                'down':  (1, 4, 16, 24, 8, 17),
-                'up':    (1, 100, 16, 25, 8, 17), # CORREGIDO: La altura (h) es 25, no 24.
-                'right': (1, 68, 16, 24, 8, 17),
+                'walk_down':  (1, 5, 16, 22, 8, 17),
+                'walk_right': (1, 37, 16, 22, 8, 17),
+                'walk_up':    (1, 101, 16, 22, 8, 17),
             }
 
-            # Diccionario para guardar las listas de animación completas
-            sprites = {}
+            scale_factor = 1.5
+            base_w, base_h = 16, 22
+            canvas_w, canvas_h = int(base_w * scale_factor), int(base_h * scale_factor)
 
+            sprites = {}
             for name, coords in anim_coords.items():
                 x_start, y, w, h, frames, spacing = coords
-                # Cargar la tira de animación
-                raw_strip = [get_scaled_image(x_start + i * spacing, y, w, h) for i in range(frames)]
-                
-                # CORRECCIÓN: Para la animación 'up', recortar el espacio transparente para un mejor ajuste.
-                if name == 'up':
-                    animation_strip = [img.subsurface(img.get_bounding_rect()) for img in raw_strip]
-                else:
-                    animation_strip = raw_strip
+                animation_strip = []
+                for i in range(frames):
+                    # 1. Recortar el sprite original
+                    original_frame = spritesheet_limpia.subsurface(pygame.Rect(x_start + i * spacing, y, w, h))
+                    # 2. Recortar el espacio transparente sobrante para un centrado preciso
+                    cropped_frame = original_frame.subsurface(original_frame.get_bounding_rect())
+                    # 3. Escalar el sprite ya recortado
+                    scaled_frame = pygame.transform.scale(cropped_frame, (int(cropped_frame.get_width() * scale_factor), int(cropped_frame.get_height() * scale_factor)))
+                    # 4. Crear un lienzo más grande y consistente para evitar cortes
+                    canvas = pygame.Surface((canvas_w, canvas_h), pygame.SRCALPHA)
+                    # 5. Pegar el sprite escalado en el centro del lienzo
+                    dest_rect = scaled_frame.get_rect(center=(canvas_w // 2, canvas_h // 2))
+                    canvas.blit(scaled_frame, dest_rect)
+                    animation_strip.append(canvas)
                 sprites[name] = animation_strip
 
-            # CORRECCIÓN: Crear sprites para la izquierda volteando los de la derecha.
-            # Se recorta el espacio transparente extra para centrar el sprite al voltearlo.
-            sprites['left'] = []
-            for img in sprites['right']:
-                # Recortar el espacio transparente para un volteo preciso
-                bounding_rect = img.get_bounding_rect()
-                cropped_img = img.subsurface(bounding_rect)
-                sprites['left'].append(pygame.transform.flip(cropped_img, True, False))
+            # Crear animaciones "idle" usando el primer fotograma de las de caminar
+            sprites['idle_down'] = [sprites['walk_down'][0]]
+            sprites['idle_right'] = [sprites['walk_right'][0]]
+            sprites['idle_up'] = [sprites['walk_up'][0]]
+
+            # Crear animaciones para la izquierda usando efecto espejo
+            sprites['walk_left'] = [pygame.transform.flip(img, True, False) for img in sprites['walk_right']]
+            sprites['idle_left'] = [pygame.transform.flip(img, True, False) for img in sprites['idle_right']]
 
             return sprites
 
@@ -215,13 +219,13 @@ class VistaPygame:
         if self.player_sprites:
             # Decidir qué animación usar (caminando o quieto)
             if self.personaje.is_moving:
-                animation_list = self.player_sprites[self.personaje.direction]
+                animation_list = self.player_sprites.get(f"walk_{self.personaje.direction}", self.player_sprites['walk_down'])
                 # Asegurarse de que el índice del fotograma no se salga de la lista
                 frame_index = self.personaje.animation_frame % len(animation_list)
                 current_sprite = animation_list[frame_index]
             else:
                 # Si no se mueve, mostrar el primer fotograma de la animación de la dirección actual
-                animation_list = self.player_sprites[self.personaje.direction]
+                animation_list = self.player_sprites.get(f"idle_{self.personaje.direction}", self.player_sprites['idle_down'])
                 current_sprite = animation_list[0]
 
             player_rect = current_sprite.get_rect(center=(self.personaje.posicion_x, self.personaje.posicion_y))
@@ -277,7 +281,9 @@ class VistaPygame:
                 # Cambiar de fotograma cada 6 ticks del juego (ajusta este valor para cambiar la velocidad de la animación)
                 if self.personaje.animation_timer >= 5:
                     self.personaje.animation_timer = 0
-                    self.personaje.animation_frame = (self.personaje.animation_frame + 1)
+                    # Evitar que el contador de frames crezca indefinidamente
+                    anim_len = len(self.player_sprites.get(f"walk_{self.personaje.direction}", [1]))
+                    self.personaje.animation_frame = (self.personaje.animation_frame + 1) % anim_len
             else:
                 self.personaje.animation_frame = 0 # Resetear animación al detenerse
 

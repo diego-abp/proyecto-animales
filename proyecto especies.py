@@ -38,84 +38,49 @@ class Personaje:
         # velocidad base (píxeles por frame). Reducida para movimiento más lento.
         self.salto = 2
         self.escudo_activo = False
-<<<<<<< HEAD
         self.direction = 'down' # Dirección inicial
         self.is_moving = False
         # Atributos para la animación
         self.animation_frame = 0
         self.animation_timer = 0
-
         self.velocidad_extra = 0
         self.ticks_velocidad = 0
 
     def mover_arriba(self):
         salto = self.salto + self.velocidad_extra
         if self.posicion_y > 0:
-            self.posicion_y = self.posicion_y - salto
+            self.posicion_y -= salto
         else:
-            self.posicion_y = 200
+            self.posicion_y = 360 # Aparece en el borde opuesto
         self.direction = 'up'
         self.is_moving = True
 
     def mover_abajo(self):
         salto = self.salto + self.velocidad_extra
         if self.posicion_y < 360:
-            self.posicion_y = self.posicion_y + salto
+            self.posicion_y += salto
         else:
-            self.posicion_y = 200
+            self.posicion_y = 0 # Aparece en el borde opuesto
         self.direction = 'down'
         self.is_moving = True
 
     def mover_derecha(self):
         salto = self.salto + self.velocidad_extra
         if self.posicion_x < 490:
-            self.posicion_x = self.posicion_x + salto
+            self.posicion_x += salto
         else:
-            self.posicion_x = 250
+            self.posicion_x = 0 # Aparece en el borde opuesto
         self.direction = 'right'
         self.is_moving = True
 
-=======
-        self.velocidad_extra = 0
-        self.ticks_velocidad = 0
-
-    def mover_arriba(self):
-        salto = self.salto + self.velocidad_extra
-        if self.posicion_y > 0:
-            self.posicion_y = self.posicion_y - salto
-        else:
-            self.posicion_y = 200
-            self.posicion_x = 250
-
-    def mover_abajo(self):
-        salto = self.salto + self.velocidad_extra
-        if self.posicion_y < 360:
-            self.posicion_y = self.posicion_y + salto
-        else:
-            self.posicion_y = 200
-            self.posicion_x = 250
-
-    def mover_derecha(self):
-        salto = self.salto + self.velocidad_extra
-        if self.posicion_x < 490:
-            self.posicion_x = self.posicion_x + salto
-        else:
-            self.posicion_x = 250
-            self.posicion_y = 200
-
->>>>>>> origin/main
     def mover_izquierda(self):
         salto = self.salto + self.velocidad_extra
         if self.posicion_x > 0:
-            self.posicion_x = self.posicion_x - salto
+            self.posicion_x -= salto
         else:
-            self.posicion_x = 250
-<<<<<<< HEAD
+            self.posicion_x = 490 # Aparece en el borde opuesto
         self.direction = 'left'
         self.is_moving = True
-=======
-            self.posicion_y = 200
->>>>>>> origin/main
 
     def activar_escudo(self):
         self.escudo_activo = True
@@ -176,7 +141,11 @@ class VistaPygame:
     def _cargar_sprites_jugador(self):
         """Carga, recorta y escala los sprites del jugador desde la hoja de sprites."""
         try:
-            spritesheet = pygame.image.load("assets/sprites/player.png").convert_alpha()
+            # CORRECCIÓN: Se carga la imagen, se establece el color verde (0, 255, 0) como transparente
+            # y luego se convierte para un rendimiento óptimo.
+            spritesheet = pygame.image.load("assets/sprites/player.png")
+            spritesheet.set_colorkey((0, 255, 0)) # RGB para el verde del fondo
+            spritesheet = spritesheet.convert_alpha()
 
             def get_scaled_image(x, y, w, h, scale_factor=1.5):
                 """Función auxiliar para recortar y escalar un sprite."""
@@ -187,23 +156,36 @@ class VistaPygame:
 
             # Coordenadas precisas para cada animación en la hoja de sprites
             # Formato: (x_inicial, y, ancho, alto, numero_de_fotogramas, espacio_horizontal)
+            # CORRECCIÓN: Se ajustan las claves y coordenadas para que coincidan con los sprites.
             anim_coords = {
-                'down': (1, 4, 16, 24, 8, 17),  # Corregido: Son 8 fotogramas
-                'up':   (1, 36, 16, 24, 8, 17), # Corregido: Son 8 fotogramas
-                'left': (1, 68, 16, 24, 8, 17), # Corregido: Son 8 fotogramas
+                'down':  (1, 4, 16, 24, 8, 17),
+                'up':    (1, 100, 16, 25, 8, 17), # CORREGIDO: La altura (h) es 25, no 24.
+                'right': (1, 68, 16, 24, 8, 17),
             }
 
             # Diccionario para guardar las listas de animación completas
             sprites = {}
 
             for name, coords in anim_coords.items():
-                x, y, w, h, frames, spacing = coords
-                # Cargar la tira de animación completa (todos los fotogramas) para cada dirección
-                animation_strip = [get_scaled_image(x + i * spacing, y, w, h) for i in range(frames)]
+                x_start, y, w, h, frames, spacing = coords
+                # Cargar la tira de animación
+                raw_strip = [get_scaled_image(x_start + i * spacing, y, w, h) for i in range(frames)]
+                
+                # CORRECCIÓN: Para la animación 'up', recortar el espacio transparente para un mejor ajuste.
+                if name == 'up':
+                    animation_strip = [img.subsurface(img.get_bounding_rect()) for img in raw_strip]
+                else:
+                    animation_strip = raw_strip
                 sprites[name] = animation_strip
 
-            # Crear sprites para la derecha volteando los de la izquierda
-            sprites['right'] = [pygame.transform.flip(img, True, False) for img in sprites['left']]
+            # CORRECCIÓN: Crear sprites para la izquierda volteando los de la derecha.
+            # Se recorta el espacio transparente extra para centrar el sprite al voltearlo.
+            sprites['left'] = []
+            for img in sprites['right']:
+                # Recortar el espacio transparente para un volteo preciso
+                bounding_rect = img.get_bounding_rect()
+                cropped_img = img.subsurface(bounding_rect)
+                sprites['left'].append(pygame.transform.flip(cropped_img, True, False))
 
             return sprites
 

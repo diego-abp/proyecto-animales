@@ -30,7 +30,6 @@ class Omnivoro(Especies):
 class Planta(Especies):
     def __init__(self, x, y, vida, reproducirse=True):
         super().__init__(x, y, vida, reproducirse, 0, False, False, False)
-
 class Personaje:
     def __init__(self, x, y, vida):
         self.posicion_x = x
@@ -39,6 +38,44 @@ class Personaje:
         # velocidad base (píxeles por frame). Reducida para movimiento más lento.
         self.salto = 2
         self.escudo_activo = False
+<<<<<<< HEAD
+        self.direction = 'down' # Dirección inicial
+        self.is_moving = False
+        # Atributos para la animación
+        self.animation_frame = 0
+        self.animation_timer = 0
+
+        self.velocidad_extra = 0
+        self.ticks_velocidad = 0
+
+    def mover_arriba(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_y > 0:
+            self.posicion_y = self.posicion_y - salto
+        else:
+            self.posicion_y = 200
+        self.direction = 'up'
+        self.is_moving = True
+
+    def mover_abajo(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_y < 360:
+            self.posicion_y = self.posicion_y + salto
+        else:
+            self.posicion_y = 200
+        self.direction = 'down'
+        self.is_moving = True
+
+    def mover_derecha(self):
+        salto = self.salto + self.velocidad_extra
+        if self.posicion_x < 490:
+            self.posicion_x = self.posicion_x + salto
+        else:
+            self.posicion_x = 250
+        self.direction = 'right'
+        self.is_moving = True
+
+=======
         self.velocidad_extra = 0
         self.ticks_velocidad = 0
 
@@ -66,13 +103,19 @@ class Personaje:
             self.posicion_x = 250
             self.posicion_y = 200
 
+>>>>>>> origin/main
     def mover_izquierda(self):
         salto = self.salto + self.velocidad_extra
         if self.posicion_x > 0:
             self.posicion_x = self.posicion_x - salto
         else:
             self.posicion_x = 250
+<<<<<<< HEAD
+        self.direction = 'left'
+        self.is_moving = True
+=======
             self.posicion_y = 200
+>>>>>>> origin/main
 
     def activar_escudo(self):
         self.escudo_activo = True
@@ -118,6 +161,9 @@ class VistaPygame:
         self.omnivoro = Omnivoro(400, 200, 100)
         self.personaje = Personaje(200, 200, 100)
 
+        # Cargar los sprites del jugador desde la hoja de sprites
+        self.player_sprites = self._cargar_sprites_jugador()
+
         # Fuente para texto
         try:
             self.font = pygame.font.SysFont(None, 20)
@@ -127,20 +173,51 @@ class VistaPygame:
 
         self.running = False
 
+    def _cargar_sprites_jugador(self):
+        """Carga, recorta y escala los sprites del jugador desde la hoja de sprites."""
+        try:
+            spritesheet = pygame.image.load("assets/sprites/player.png").convert_alpha()
+
+            def get_scaled_image(x, y, w, h, scale_factor=1.5):
+                """Función auxiliar para recortar y escalar un sprite."""
+                sprite = spritesheet.subsurface(pygame.Rect(x, y, w, h))
+                nuevo_ancho = int(w * scale_factor)
+                nuevo_alto = int(h * scale_factor)
+                return pygame.transform.scale(sprite, (nuevo_ancho, nuevo_alto))
+
+            # Coordenadas precisas para cada animación en la hoja de sprites
+            # Formato: (x_inicial, y, ancho, alto, numero_de_fotogramas, espacio_horizontal)
+            anim_coords = {
+                'down': (1, 4, 16, 24, 8, 17),  # Corregido: Son 8 fotogramas
+                'up':   (1, 36, 16, 24, 8, 17), # Corregido: Son 8 fotogramas
+                'left': (1, 68, 16, 24, 8, 17), # Corregido: Son 8 fotogramas
+            }
+
+            # Diccionario para guardar las listas de animación completas
+            sprites = {}
+
+            for name, coords in anim_coords.items():
+                x, y, w, h, frames, spacing = coords
+                # Cargar la tira de animación completa (todos los fotogramas) para cada dirección
+                animation_strip = [get_scaled_image(x + i * spacing, y, w, h) for i in range(frames)]
+                sprites[name] = animation_strip
+
+            # Crear sprites para la derecha volteando los de la izquierda
+            sprites['right'] = [pygame.transform.flip(img, True, False) for img in sprites['left']]
+
+            return sprites
+
+        except pygame.error as e:
+            print(f"Error al cargar sprites: {e}")
+            print("Asegúrate de que 'assets/sprites/player.png' existe y la ruta es correcta.")
+            return None
+
     def handle_event(self, event):
         if event.type == pygame.QUIT:
             self.running = False
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.running = False
-            elif event.key in (pygame.K_UP, pygame.K_w):
-                self.personaje.mover_arriba()
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
-                self.personaje.mover_abajo()
-            elif event.key in (pygame.K_LEFT, pygame.K_a):
-                self.personaje.mover_izquierda()
-            elif event.key in (pygame.K_RIGHT, pygame.K_d):
-                self.personaje.mover_derecha()
 
     def draw(self):
         # Fondo
@@ -151,8 +228,23 @@ class VistaPygame:
         text_surf = self.font.render(texto, True, (0, 0, 0))
         self.screen.blit(text_surf, (10, 10))
 
-        # Dibujar personaje
-        pygame.draw.circle(self.screen, (0, 0, 255), (int(self.personaje.posicion_x), int(self.personaje.posicion_y)), 15)
+        # Dibujar personaje (sprite o círculo)
+        if self.player_sprites:
+            # Decidir qué animación usar (caminando o quieto)
+            if self.personaje.is_moving:
+                animation_list = self.player_sprites[self.personaje.direction]
+                # Asegurarse de que el índice del fotograma no se salga de la lista
+                frame_index = self.personaje.animation_frame % len(animation_list)
+                current_sprite = animation_list[frame_index]
+            else:
+                # Si no se mueve, mostrar el primer fotograma de la animación de la dirección actual
+                animation_list = self.player_sprites[self.personaje.direction]
+                current_sprite = animation_list[0]
+
+            player_rect = current_sprite.get_rect(center=(self.personaje.posicion_x, self.personaje.posicion_y))
+            self.screen.blit(current_sprite, player_rect)
+        else: # Si no se carga la imagen, dibujar un círculo azul como antes
+            pygame.draw.circle(self.screen, (0, 0, 255), (int(self.personaje.posicion_x), int(self.personaje.posicion_y)), 15)
 
         # Carnívoro
         pygame.draw.circle(self.screen, (255, 0, 0), (int(self.carnivoro.posicion_x), int(self.carnivoro.posicion_y)), 15)
@@ -178,6 +270,9 @@ class VistaPygame:
             for event in pygame.event.get():
                 self.handle_event(event)
 
+            # Resetear el estado de movimiento antes de comprobar las teclas
+            self.personaje.is_moving = False
+
             # Movimiento sostenido: comprobar teclas mantenidas
             keys = pygame.key.get_pressed()
             # salir con ESC también por keys
@@ -192,6 +287,16 @@ class VistaPygame:
                 self.personaje.mover_izquierda()
             if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
                 self.personaje.mover_derecha()
+
+            # Lógica de animación
+            if self.personaje.is_moving:
+                self.personaje.animation_timer += 1
+                # Cambiar de fotograma cada 6 ticks del juego (ajusta este valor para cambiar la velocidad de la animación)
+                if self.personaje.animation_timer >= 5:
+                    self.personaje.animation_timer = 0
+                    self.personaje.animation_frame = (self.personaje.animation_frame + 1)
+            else:
+                self.personaje.animation_frame = 0 # Resetear animación al detenerse
 
             # Actualizaciones por tick
             self.personaje.tick_velocidad()
@@ -212,5 +317,3 @@ if __name__ == "__main__":
 
     
         
-
-

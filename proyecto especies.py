@@ -1,7 +1,8 @@
-import wx
+import pygame
 import math
 import time
 import random
+
 
 class Especies:
     def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False):
@@ -92,83 +93,110 @@ class Caballero(Personaje):
 		super().__init__(x,y,vida)
 		self.defensa = defensa
 
-class VistaSimple:
-    def __init__(self):
-        self.app = wx.App()
-        self.ventana = wx.Frame(None, title="Juego", size=(500, 400))
-        self.panel = wx.Panel(self.ventana)
-        
-        # CAMBIO IMPORTANTE: Usar EVT_CHAR_HOOK en lugar de EVT_KEY_DOWN
-        self.panel.Bind(wx.EVT_CHAR_HOOK, self.on_key_down)
-        self.panel.Bind(wx.EVT_PAINT, self.on_paint)
-        self.panel.SetFocus()
-        
+class VistaPygame:
+    """Interfaz simple usando pygame: dibuja 3 entidades y permite mover el personaje.
+
+    Controles:
+    - Flechas o WASD: mover
+    - ESC o cerrar ventana: salir
+    """
+    def __init__(self, ancho=500, alto=400, fps=30):
+        pygame.init()
+        self.ancho = ancho
+        self.alto = alto
+        self.screen = pygame.display.set_mode((self.ancho, self.alto))
+        pygame.display.set_caption("Juego - Proyecto Especies")
+        self.clock = pygame.time.Clock()
+        self.fps = fps
+
+        # Entidades
         self.carnivoro = Carnivoro(250, 200, 100)
         self.herbivoro = Herbivoro(10, 200, 100)
         self.personaje = Personaje(200, 200, 100)
-        self.instrucciones = wx.StaticText(self.panel, pos=(10, 10), 
-            label="Flechas/WASD = mover, ESC = salir")
-        self.instrucciones.SetForegroundColour('blue')
-        self.ventana.Centre()
-        self.ventana.Show()
 
-    def on_paint(self, event):
-        dc = wx.PaintDC(self.panel)
-        dc.SetBackground(wx.Brush('white'))
-        dc.Clear()
-        
-        # Dibujar el personaje
-        dc.DrawText(f"X: {self.personaje.posicion_x}, Y: {self.personaje.posicion_y}", 10, 40)
-        dc.SetBrush(wx.Brush('blue'))
-        dc.DrawCircle(self.personaje.posicion_x, self.personaje.posicion_y, 15)
-        
-        # Dibujar el carnívoro
-        dc.SetBrush(wx.Brush('red'))
-        dc.DrawCircle(self.carnivoro.posicion_x, self.carnivoro.posicion_y, 15)
-        
-        # Dibujar el herbívoro
-        dc.SetBrush(wx.Brush('green'))
-        dc.DrawCircle(self.herbivoro.posicion_x, self.herbivoro.posicion_y, 15)
-    
-    def on_key_down(self, event):
-        keycode = event.GetKeyCode()
-        print(f"tecla-->{keycode}")
-        
-        # Flechas direccionales
-        if keycode == wx.WXK_UP:
-            print("¡Flecha Arriba!")
-            self.personaje.mover_arriba()
-        elif keycode == wx.WXK_DOWN:
-            print("¡Flecha Abajo!")
-            self.personaje.mover_abajo()
-        elif keycode == wx.WXK_LEFT:
-            print("¡Flecha Izquierda!")
-            self.personaje.mover_izquierda()
-        elif keycode == wx.WXK_RIGHT:
-            print("¡Flecha Derecha!")
-            self.personaje.mover_derecha()
-        # WASD
-        elif keycode == ord('W') or keycode == ord('w'):
-            self.personaje.mover_arriba()
-        elif keycode == ord('S') or keycode == ord('s'):
-            self.personaje.mover_abajo()
-        elif keycode == ord('A') or keycode == ord('a'):
-            self.personaje.mover_izquierda()
-        elif keycode == ord('D') or keycode == ord('d'):
-            self.personaje.mover_derecha()
-        elif keycode == wx.WXK_ESCAPE:
-            self.ventana.Close()
-            return
-        
-        self.panel.Refresh()
-        event.Skip()  # Importante para EVT_CHAR_HOOK
+        # Fuente para texto
+        try:
+            self.font = pygame.font.SysFont(None, 20)
+        except Exception:
+            pygame.font.init()
+            self.font = pygame.font.SysFont(None, 20)
+
+        self.running = False
+
+    def handle_event(self, event):
+        if event.type == pygame.QUIT:
+            self.running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.running = False
+            elif event.key in (pygame.K_UP, pygame.K_w):
+                self.personaje.mover_arriba()
+            elif event.key in (pygame.K_DOWN, pygame.K_s):
+                self.personaje.mover_abajo()
+            elif event.key in (pygame.K_LEFT, pygame.K_a):
+                self.personaje.mover_izquierda()
+            elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                self.personaje.mover_derecha()
+
+    def draw(self):
+        # Fondo
+        self.screen.fill((255, 255, 255))
+
+        # Texto de posición
+        texto = f"X: {self.personaje.posicion_x}, Y: {self.personaje.posicion_y}"
+        text_surf = self.font.render(texto, True, (0, 0, 0))
+        self.screen.blit(text_surf, (10, 10))
+
+        # Dibujar personaje
+        pygame.draw.circle(self.screen, (0, 0, 255), (int(self.personaje.posicion_x), int(self.personaje.posicion_y)), 15)
+
+        # Carnívoro
+        pygame.draw.circle(self.screen, (255, 0, 0), (int(self.carnivoro.posicion_x), int(self.carnivoro.posicion_y)), 15)
+
+        # Herbívoro
+        pygame.draw.circle(self.screen, (0, 200, 0), (int(self.herbivoro.posicion_x), int(self.herbivoro.posicion_y)), 15)
+
+        # Instrucciones
+        instrucciones = self.font.render("Flechas/WASD = mover, ESC = salir", True, (0, 0, 150))
+        self.screen.blit(instrucciones, (10, self.alto - 25))
+
+        pygame.display.flip()
 
     def iniciar(self):
-        self.app.MainLoop()
+        self.running = True
+        while self.running:
+            for event in pygame.event.get():
+                self.handle_event(event)
+
+            # Movimiento sostenido: comprobar teclas mantenidas
+            keys = pygame.key.get_pressed()
+            # salir con ESC también por keys
+            if keys[pygame.K_ESCAPE]:
+                self.running = False
+
+            if keys[pygame.K_UP] or keys[pygame.K_w]:
+                self.personaje.mover_arriba()
+            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                self.personaje.mover_abajo()
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                self.personaje.mover_izquierda()
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                self.personaje.mover_derecha()
+
+            # Actualizaciones por tick
+            self.personaje.tick_velocidad()
+
+            # Dibujar
+            self.draw()
+
+            # Mantener FPS
+            self.clock.tick(self.fps)
+
+        pygame.quit()
 
 if __name__ == "__main__":
     print("=== Juego en 2 capas Lógica y Vista ===")
-    juego = VistaSimple()
+    juego = VistaPygame()
     juego.iniciar()
 #hola 
 

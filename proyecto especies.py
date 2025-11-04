@@ -17,6 +17,12 @@ class Especies:
         self.tiempo_vida_max = tiempo_vida_max
         self.tiempo_vida_actual = tiempo_vida_max
         self.ultimo_update = time.time()
+        
+        # Atributos para movimiento aleatorio de las especies
+        self.last_random_move_time = time.time()
+        self.random_move_delay = 0.5 # Mover cada 0.5 segundos
+        self.current_dx, self.current_dy = 0, 0 # Dirección actual (x, y)
+
     
     def update_tiempo_vida(self):
         """Actualiza el tiempo de vida de la especie. Devuelve True si sigue viva, False si ha muerto."""
@@ -31,21 +37,169 @@ class Especies:
         """Devuelve el porcentaje de tiempo de vida restante."""
         return (self.tiempo_vida_actual / self.tiempo_vida_max) * 100
 
+    def mover(self, screen_width, screen_height, posibles_presas={}):
+        """
+        Mueve la especie de forma aleatoria dentro de los límites de la pantalla.
+        """
+        ahora = time.time()
+        if ahora - self.last_random_move_time > self.random_move_delay:
+            self.last_random_move_time = ahora
+            self.current_dx = random.choice([-1, 0, 1])
+            self.current_dy = random.choice([-1, 0, 1])
+            
+        # Mover la especie
+        self.posicion_x += self.current_dx * self.salto
+        self.posicion_y += self.current_dy * self.salto
+
+        # Envolver la posición si sale de los límites de la pantalla
+        # El operador % maneja bien los valores negativos para envolver.
+        self.posicion_x %= screen_width
+        self.posicion_y %= screen_height
+
 class Carnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4):
-        # Los carnívoros tienen tiempo de vida medio (80)
+        # Los carnívoros tienen tiempo de vida medio (180)
         super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=180)
+        self.presa_objetivo = None
+        self.estado_caza = "DEAMBULANDO"  # DEAMBULANDO, ACECHANDO, ATACANDO
+        self.radio_deteccion = 150
+        self.radio_ataque = 70
+
+    def mover(self, screen_width, screen_height, posibles_presas={}):
+        """
+        Comportamiento de depredador con estados: deambula, acecha y ataca.
+        """
+        # Verificar si la presa sigue viva, si no, la olvida.
+        if self.presa_objetivo and (self.presa_objetivo not in posibles_presas.values() or self.presa_objetivo.get_porcentaje_vida() <= 0):
+            self.presa_objetivo = None
+            self.estado_caza = "DEAMBULANDO"
+
+        # --- Lógica de Estados ---
+
+        # 1. BÚSQUEDA (si está deambulando)
+        if self.estado_caza == "DEAMBULANDO":
+            presa_mas_cercana = None
+            distancia_minima = self.radio_deteccion
+            for especie in posibles_presas.values():
+                if especie is self or isinstance(especie, Carnivoro):
+                    continue
+                dist = math.sqrt((self.posicion_x - especie.posicion_x)**2 + (self.posicion_y - especie.posicion_y)**2)
+                if dist < distancia_minima:
+                    distancia_minima = dist
+                    presa_mas_cercana = especie
+            
+            if presa_mas_cercana:
+                self.presa_objetivo = presa_mas_cercana
+                self.estado_caza = "ACECHANDO" # Cambia a estado de acecho
+            else:
+                # Si no encuentra presa, deambula aleatoriamente.
+                super().mover(screen_width, screen_height, posibles_presas)
+                return # Termina la ejecución de este turno
+
+        # 2. MOVIMIENTO (si está acechando o atacando)
+        if self.estado_caza in ["ACECHANDO", "ATACANDO"]:
+            if not self.presa_objetivo: # Seguridad por si pierde la presa
+                self.estado_caza = "DEAMBULANDO"
+                return
+
+            dx = self.presa_objetivo.posicion_x - self.posicion_x
+            dy = self.presa_objetivo.posicion_y - self.posicion_y
+            dist = math.sqrt(dx**2 + dy**2)
+
+            # Decide la velocidad según el estado y la distancia
+            velocidad_actual = 0
+            if dist < self.radio_ataque:
+                self.estado_caza = "ATACANDO"
+                # Velocidad progresiva: más rápido cuanto más cerca está.
+                velocidad_base_ataque = 3.0
+                aceleracion = 2.5
+                progreso = 1 - (dist / self.radio_ataque) # 0 en el borde, 1 en el centro
+                velocidad_actual = velocidad_base_ataque + (aceleracion * progreso)
+            else:
+                self.estado_caza = "ACECHANDO"
+                velocidad_actual = 1.5 # Velocidad de acecho, discreta y lenta
+
+            # Moverse hacia la presa
+            if dist > 0:
+                self.posicion_x += (dx / dist) * velocidad_actual
+                self.posicion_y += (dy / dist) * velocidad_actual
+
 
 class Herbivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4):
-        # Los herbívoros tienen tiempo de vida largo (120)
-        super().__init__(x, y, vida, reproducirse, salto, False, True, True, tiempo_vida_max=60)
+        # Los herbívoros tienen un comportamiento más tranquilo.
+        # Se mueven más lento (salto=1) y cambian de dirección con menos frecuencia.
+        super().__init__(x, y, vida, reproducirse, salto=1, atacar=False, correr=True, comer=True, tiempo_vida_max=60)
+        self.random_move_delay = 2.0 # Cambia de dirección cada 2 segundos.
+
+    def mover(self, screen_width, screen_height, posibles_presas={}):
+        """
+        Comportamiento de movimiento específico para el herbívoro: más tranquilo y
+        con tendencia a quedarse quieto.
+        """
+        ahora = time.time()
+        if ahora - self.last_random_move_time > self.random_move_delay:
+            self.last_random_move_time = ahora
+            
+            # 50% de probabilidad de quedarse quieto, 50% de moverse.
+            if random.random() < 0.5:
+                self.current_dx, self.current_dy = 0, 0
+            else:
+                self.current_dx = random.choice([-1, 0, 1])
+                self.current_dy = random.choice([-1, 0, 1])
+
+        # Reutiliza la lógica de movimiento y envoltura de la clase padre.
+        super().mover(screen_width, screen_height)
 
 class Omnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4):
         # Los omnívoros tienen tiempo de vida equilibrado (100)
-        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=100)
+        super().__init__(x, y, vida, reproducirse, salto=3, atacar=True, correr=True, comer=True, tiempo_vida_max=100)
+        self.presa = None
+        self.modo_caza = False # Alterna entre cazar y deambular
 
+    def mover(self, screen_width, screen_height, posibles_presas={}):
+        """
+        Comportamiento mixto: a veces caza, a veces deambula tranquilamente.
+        """
+        ahora = time.time()
+        if ahora - self.last_random_move_time > self.random_move_delay:
+            self.last_random_move_time = ahora
+            # 50% de probabilidad de cambiar de modo (caza/deambular)
+            if random.random() < 0.5:
+                self.modo_caza = not self.modo_caza
+                self.presa = None # Olvida la presa al cambiar de modo
+
+        if self.modo_caza:
+            # Comportamiento de caza (similar al carnívoro pero menos agresivo)
+            if self.presa and (self.presa not in posibles_presas.values() or self.presa.get_porcentaje_vida() <= 0):
+                self.presa = None
+
+            if not self.presa:
+                presa_mas_cercana = None
+                distancia_minima = 100  # Radio de detección más pequeño
+                for especie in posibles_presas.values():
+                    if especie is self or isinstance(especie, (Carnivoro, Omnivoro)):
+                        continue
+                    dist = math.sqrt((self.posicion_x - especie.posicion_x)**2 + (self.posicion_y - especie.posicion_y)**2)
+                    if dist < distancia_minima:
+                        distancia_minima = dist
+                        presa_mas_cercana = especie
+                self.presa = presa_mas_cercana
+
+            if self.presa:
+                velocidad_caza = 1.5
+                dx = self.presa.posicion_x - self.posicion_x
+                dy = self.presa.posicion_y - self.posicion_y
+                dist = math.sqrt(dx**2 + dy**2)
+                if dist > 0:
+                    self.posicion_x += (dx / dist) * velocidad_caza
+                    self.posicion_y += (dy / dist) * velocidad_caza
+            else: # Si no encuentra presa en modo caza, deambula
+                super().mover(screen_width, screen_height)
+        else:
+            # Comportamiento de recolección (similar al herbívoro)
+            super().mover(screen_width, screen_height)
 class Planta(Especies):
     def __init__(self, x, y, vida, reproducirse=True):
         # Las plantas tienen tiempo de vida muy largo (150)
@@ -174,10 +328,11 @@ class VistaPygame:
 
         # Definiciones (y_pos, num_frames, spacing). Mantengo las posiciones usadas
         # originalmente: si la hoja cambia, ajustar estos valores.
+        # Para usar un frame estático, simplemente cargamos 1 fotograma en lugar de 8.
         animation_definitions = {
-            self.personaje.WALK_DOWN:   (5, 8, 17),
-            self.personaje.WALK_RIGHT:  (37, 8, 17),
-            self.personaje.WALK_UP:     (101, 8, 17),
+            self.personaje.WALK_DOWN:   (5, 1, 17),
+            self.personaje.WALK_RIGHT:  (37, 1, 17),
+            self.personaje.WALK_UP:     (101, 1, 17),
         }
 
         frame_width, frame_height = 16, 22
@@ -212,9 +367,11 @@ class VistaPygame:
                 except Exception:
                     scaled_frame = pygame.transform.scale(cropped_frame, (new_w, new_h))
 
-                # Pegar en un canvas centrado para que todos los frames tengan el mismo tamaño.
+                # Crear un canvas y pegar el sprite alineado por la parte inferior.
+                # Esto asegura que los pies del personaje estén siempre a la misma altura.
                 canvas = pygame.Surface((scale_width, scale_height), pygame.SRCALPHA)
-                dest_rect = scaled_frame.get_rect(center=(scale_width // 2, scale_height // 2))
+                # Usamos 'midbottom' para alinear el centro horizontal y la parte inferior vertical.
+                dest_rect = scaled_frame.get_rect(midbottom=(scale_width // 2, scale_height))
                 canvas.blit(scaled_frame, dest_rect)
                 animation_strip.append(canvas)
 
@@ -283,7 +440,8 @@ class VistaPygame:
             image_to_draw = pygame.transform.flip(current_frame, flip, False)
 
             # Dibujar el sprite centrado en la posición del personaje
-            rect = image_to_draw.get_rect(center=(int(self.personaje.posicion_x), int(self.personaje.posicion_y)))
+            # Alinear por la parte superior central para que posicion_y represente la parte superior del personaje
+            rect = image_to_draw.get_rect(midtop=(int(self.personaje.posicion_x), int(self.personaje.posicion_y)))
             self.screen.blit(image_to_draw, rect)
         else:
             # Si no hay sprites, dibujar el círculo azul
@@ -364,6 +522,10 @@ class VistaPygame:
             # Si el estado de la animación ha cambiado, reiniciar el índice del fotograma.
             if self.personaje.state != old_state:
                 self.personaje.frame_index = 0
+
+            # Movimiento aleatorio de las especies
+            for nombre, especie in self.especies_vivas.items():
+                especie.mover(self.ancho, self.alto, self.especies_vivas)
 
             # Actualizaciones por tick
             self.personaje.tick_velocidad()

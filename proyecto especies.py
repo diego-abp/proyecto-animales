@@ -5,7 +5,7 @@ import random
 
 
 class Especies:
-    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False):
+    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False, tiempo_vida_max=100):
         self.posicion_x = x
         self.posicion_y = y
         self.vida = vida
@@ -13,23 +13,43 @@ class Especies:
         self.salto = salto
         self.atacar = atacar 
         self.correr = correr
-        self.comer = comer    
+        self.comer = comer
+        self.tiempo_vida_max = tiempo_vida_max
+        self.tiempo_vida_actual = tiempo_vida_max
+        self.ultimo_update = time.time()
+    
+    def update_tiempo_vida(self):
+        """Actualiza el tiempo de vida de la especie. Devuelve True si sigue viva, False si ha muerto."""
+        ahora = time.time()
+        tiempo_transcurrido = ahora - self.ultimo_update
+        # Reducir tiempo de vida (1 unidad cada segundo)
+        self.tiempo_vida_actual = max(0, self.tiempo_vida_actual - tiempo_transcurrido)
+        self.ultimo_update = ahora
+        return self.tiempo_vida_actual > 0
+    
+    def get_porcentaje_vida(self):
+        """Devuelve el porcentaje de tiempo de vida restante."""
+        return (self.tiempo_vida_actual / self.tiempo_vida_max) * 100
 
 class Carnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4):
-        super().__init__(x, y, vida, reproducirse, salto, True, True, True)
+        # Los carnívoros tienen tiempo de vida medio (80)
+        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=180)
 
 class Herbivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4):
-        super().__init__(x, y, vida, reproducirse, salto, False, True, True)
+        # Los herbívoros tienen tiempo de vida largo (120)
+        super().__init__(x, y, vida, reproducirse, salto, False, True, True, tiempo_vida_max=60)
 
 class Omnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4):
-        super().__init__(x, y, vida, reproducirse, salto, True, True, True)
+        # Los omnívoros tienen tiempo de vida equilibrado (100)
+        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=100)
 
 class Planta(Especies):
     def __init__(self, x, y, vida, reproducirse=True):
-        super().__init__(x, y, vida, reproducirse, 0, False, False, False)
+        # Las plantas tienen tiempo de vida muy largo (150)
+        super().__init__(x, y, vida, reproducirse, 0, False, False, False, tiempo_vida_max=150)
         
 class Personaje:
     def __init__(self, x, y, vida):
@@ -127,10 +147,12 @@ class VistaPygame:
         self.clock = pygame.time.Clock()
         self.fps = fps
 
-        # Entidades
-        self.carnivoro = Carnivoro(250, 200, 100)
-        self.herbivoro = Herbivoro(10, 200, 100)
-        self.omnivoro = Omnivoro(400, 200, 100)
+        # Lista de especies vivas
+        self.especies_vivas = {
+            'carnivoro': Carnivoro(250, 200, 100),
+            'herbivoro': Herbivoro(10, 200, 100),
+            'omnivoro': Omnivoro(400, 200, 100)
+        }
         self.personaje = Personaje(200, 200, 100)
 
         # Cargar animaciones del personaje
@@ -147,19 +169,13 @@ class VistaPygame:
     def _load_animations(self):
         """Extrae, escala y organiza las animaciones desde la hoja de sprites."""
         animations = {}
+        # Cargar la hoja con alpha y trabajar por rectángulos (más fiable y rápido).
         sprite_sheet = pygame.image.load("assets/sprites/player.png").convert_alpha()
 
-        # Limpiar el fondo de la hoja de sprites para evitar bordes de color.
-        sprite_sheet_limpia = pygame.Surface(sprite_sheet.get_size(), pygame.SRCALPHA)
-        for x in range(sprite_sheet.get_width()):
-            for y in range(sprite_sheet.get_height()):
-                color_pixel = sprite_sheet.get_at((x, y))
-                if color_pixel[:3] != (0, 128, 128) and color_pixel[:3] != (0, 64, 64):
-                    sprite_sheet_limpia.set_at((x, y), color_pixel)
-        
-        # CORRECCIÓN: Las definiciones ahora coinciden con la hoja de sprites real (sprites de 16x22).
+        # Definiciones (y_pos, num_frames, spacing). Mantengo las posiciones usadas
+        # originalmente: si la hoja cambia, ajustar estos valores.
         animation_definitions = {
-            self.personaje.WALK_DOWN:   (5, 8, 17),  # y=5, 8 frames, 17px de espacio
+            self.personaje.WALK_DOWN:   (5, 8, 17),
             self.personaje.WALK_RIGHT:  (37, 8, 17),
             self.personaje.WALK_UP:     (101, 8, 17),
         }
@@ -167,23 +183,41 @@ class VistaPygame:
         frame_width, frame_height = 16, 22
         scale_width, scale_height = 48, 48
 
-        # Cargar animaciones de caminar
+        # Cargar animaciones de caminar de forma segura.
         for state, (y_pos, num_frames, spacing) in animation_definitions.items():
             animation_strip = []
             for i in range(num_frames):
                 x = 1 + (i * spacing)
                 y = y_pos
-                # 1. Recortar el sprite original.
-                original_frame = sprite_sheet_limpia.subsurface(pygame.Rect(x, y, frame_width, frame_height))
-                # 2. Recortar el espacio transparente para obtener solo el personaje (esto evita el deslizamiento).
-                cropped_frame = original_frame.subsurface(original_frame.get_bounding_rect())
-                # 3. Escalar el personaje ya recortado.
-                scaled_frame = pygame.transform.scale(cropped_frame, (int(cropped_frame.get_width() * 1.5), int(cropped_frame.get_height() * 1.5)))
-                # 4. Crear un lienzo consistente y pegar el personaje en el centro.
+                # Recortar el área esperada y usar un copy() para evitar referencias a la hoja.
+                try:
+                    original_frame = sprite_sheet.subsurface(pygame.Rect(x, y, frame_width, frame_height)).copy()
+                except Exception:
+                    # Si las coordenadas están fuera de rango, crear un frame transparente de respaldo.
+                    original_frame = pygame.Surface((frame_width, frame_height), pygame.SRCALPHA)
+
+                # Intentar recortar la región no transparente; si está vacía, usar el frame completo.
+                bounding = original_frame.get_bounding_rect()
+                if bounding.width == 0 or bounding.height == 0:
+                    cropped_frame = original_frame
+                else:
+                    cropped_frame = original_frame.subsurface(bounding).copy()
+
+                # Escalar el sprite recortado manteniendo proporciones y calidad.
+                scale_factor = max(1, min(scale_width / max(1, cropped_frame.get_width()), scale_height / max(1, cropped_frame.get_height())))
+                new_w = max(1, int(cropped_frame.get_width() * scale_factor))
+                new_h = max(1, int(cropped_frame.get_height() * scale_factor))
+                try:
+                    scaled_frame = pygame.transform.smoothscale(cropped_frame, (new_w, new_h))
+                except Exception:
+                    scaled_frame = pygame.transform.scale(cropped_frame, (new_w, new_h))
+
+                # Pegar en un canvas centrado para que todos los frames tengan el mismo tamaño.
                 canvas = pygame.Surface((scale_width, scale_height), pygame.SRCALPHA)
                 dest_rect = scaled_frame.get_rect(center=(scale_width // 2, scale_height // 2))
                 canvas.blit(scaled_frame, dest_rect)
                 animation_strip.append(canvas)
+
             animations[state] = animation_strip
         
         # Crear animaciones "idle" usando el primer fotograma de las de caminar
@@ -204,10 +238,38 @@ class VistaPygame:
         # Fondo
         self.screen.fill((255, 255, 255))
 
-        # Texto de posición
+        # Actualizar tiempo de vida de las especies
+        especies_muertas = []
+        y_offset = 10
+        
+        for nombre, especie in self.especies_vivas.items():
+            if especie.update_tiempo_vida():
+                # Especie viva: mostrar tiempo de vida restante
+                porcentaje = especie.get_porcentaje_vida()
+                # Color según porcentaje de vida
+                if porcentaje > 60:
+                    color = (0, 150, 0)  # Verde
+                elif porcentaje > 30:
+                    color = (200, 150, 0)  # Amarillo
+                else:
+                    color = (200, 0, 0)  # Rojo
+                
+                texto = f"{especie.__class__.__name__}: {porcentaje:.1f}%"
+                text_surf = self.font.render(texto, True, color)
+                self.screen.blit(text_surf, (10, y_offset))
+                y_offset += 20
+            else:
+                # Especie muerta: marcar para eliminar silenciosamente
+                especies_muertas.append(nombre)
+
+        # Eliminar especies muertas
+        for nombre in especies_muertas:
+            del self.especies_vivas[nombre]
+
+        # Texto de posición del personaje
         texto = f"X: {self.personaje.posicion_x}, Y: {self.personaje.posicion_y}"
         text_surf = self.font.render(texto, True, (0, 0, 0))
-        self.screen.blit(text_surf, (10, 10))
+        self.screen.blit(text_surf, (10, y_offset))
 
         # Dibujar el sprite del personaje
         if self.animations:
@@ -227,17 +289,20 @@ class VistaPygame:
             # Si no hay sprites, dibujar el círculo azul
             pygame.draw.circle(self.screen, (0, 0, 255), (int(self.personaje.posicion_x), int(self.personaje.posicion_y)), 15)
 
-        # Carnívoro
-        pygame.draw.circle(self.screen, (255, 0, 0), (int(self.carnivoro.posicion_x), int(self.carnivoro.posicion_y)), 15)
-
-        # Herbívoro
-        pygame.draw.circle(self.screen, (0, 200, 0), (int(self.herbivoro.posicion_x), int(self.herbivoro.posicion_y)), 15)
-
-        # Omnívoro: dibujar como cuadrado morado
-        omni_size = 20
-        omni_x = int(self.omnivoro.posicion_x) - omni_size // 2
-        omni_y = int(self.omnivoro.posicion_y) - omni_size // 2
-        pygame.draw.rect(self.screen, (128, 0, 128), (omni_x, omni_y, omni_size, omni_size))
+        # Dibujar especies vivas
+        for nombre, especie in self.especies_vivas.items():
+            if nombre == 'carnivoro':
+                pygame.draw.circle(self.screen, (255, 0, 0), 
+                                (int(especie.posicion_x), int(especie.posicion_y)), 15)
+            elif nombre == 'herbivoro':
+                pygame.draw.circle(self.screen, (0, 200, 0), 
+                                (int(especie.posicion_x), int(especie.posicion_y)), 15)
+            elif nombre == 'omnivoro':
+                omni_size = 20
+                omni_x = int(especie.posicion_x) - omni_size // 2
+                omni_y = int(especie.posicion_y) - omni_size // 2
+                pygame.draw.rect(self.screen, (128, 0, 128), 
+                              (omni_x, omni_y, omni_size, omni_size))
 
         # Instrucciones
         instrucciones = self.font.render("Flechas/WASD = mover, ESC = salir", True, (0, 0, 150))

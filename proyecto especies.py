@@ -20,6 +20,10 @@ class Especies:
         self.tiempo_vida_actual = tiempo_vida_max
         self.ultimo_update = time.time()
         # Si es True, el envejecimiento por tiempo también reduce la vida (HP)
+        # Atributos para movimiento aleatorio
+        self.last_random_move_time = time.time()
+        self.random_move_delay = random.uniform(1, 3) # Cambiar de dirección cada 1-3 segundos
+        self.random_move_target = None
         self.sync_vida_with_tiempo = sync_vida_with_tiempo
 
     def update_tiempo_vida(self):
@@ -67,6 +71,23 @@ class Especies:
             self.posicion_y = 360
         elif self.posicion_y > 360:
             self.posicion_y = 0
+
+    def mover(self, screen_width, screen_height, posibles_presas={}):
+        """Comportamiento de movimiento base: deambular aleatoriamente."""
+        ahora = time.time()
+        # Si no tiene objetivo o ha pasado suficiente tiempo, elige uno nuevo
+        if self.random_move_target is None or ahora - self.last_random_move_time > self.random_move_delay:
+            self.last_random_move_time = ahora
+            self.random_move_delay = random.uniform(2, 5) # Nuevo intervalo
+            # Elige un punto aleatorio en la pantalla
+            self.random_move_target = (random.randint(0, screen_width), random.randint(0, screen_height))
+
+        # Moverse hacia el objetivo aleatorio
+        if self.random_move_target:
+            self.mover_hacia(self.random_move_target[0], self.random_move_target[1])
+            # Si llega cerca del objetivo, lo olvida para poder elegir uno nuevo
+            if math.hypot(self.posicion_x - self.random_move_target[0], self.posicion_y - self.random_move_target[1]) < 10:
+                self.random_move_target = None
 
 class Carnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=1.5):

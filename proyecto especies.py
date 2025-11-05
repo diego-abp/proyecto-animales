@@ -90,13 +90,86 @@ class Especies:
                 self.random_move_target = None
 
 class Carnivoro(Especies):
-    def __init__(self, x, y, vida, reproducirse=True, salto=1.5):
-        # Los carnívoros tienen tiempo de vida medio (80). Se mueven más despacio por defecto.
-        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=80)
+    def __init__(self, x, y, vida, reproducirse=True, salto=3.5):
+        # Los carnívoros tienen tiempo de vida medio (80). Son más rápidos para cazar.
+        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=80, sync_vida_with_tiempo=True)
         # Atributos de ataque: menos daño por golpe y cooldown mayor (no mata de un golpe)
         self.attack_power = 25
         self.attack_cooldown = 2.0  # segundos entre ataques
-        self.last_attack = 0.0
+        self.last_attack = 0.0      # timestamp del último ataque
+
+        # Atributos para la IA de caza
+        self.hunt_state = 'wandering'  # Estados: 'wandering', 'chasing'
+        self.target = None
+        self.detection_radius = 150  # Radio para empezar a cazar
+        self.chase_radius = 250      # Radio para dejar de cazar si la presa escapa
+        self.provoked_by_player = False # Se vuelve True si el jugador le ataca
+
+    def mover(self, screen_width, screen_height, all_species):
+        """
+        IA del Carnívoro: Deambula, detecta presas, las caza con una estrategia de acecho y embestida,
+        y pierde el interés si se alejan demasiado.
+        """
+        ahora = time.time()
+
+        # --- Lógica de Estados ---
+        if self.hunt_state == 'wandering':
+            # 1. Deambular aleatoriamente
+            super().mover(screen_width, screen_height)
+            
+            # 2. Buscar presas.
+            possible_targets = []
+            # Si está provocado, el jugador es la máxima prioridad.
+            if self.provoked_by_player and 'personaje' in all_species:
+                self.target = all_species['personaje']
+                self.hunt_state = 'chasing'
+                return # Cambia a modo caza inmediatamente
+
+            # Si no está provocado, busca otras presas (no al jugador).
+            if 'herbivoro' in all_species: possible_targets.append(all_species['herbivoro'])
+            if 'omnivoro' in all_species: possible_targets.append(all_species['omnivoro'])
+            # Descomentar la siguiente línea para que ataque al jugador si está provocado, incluso mientras deambula.
+            # if self.provoked_by_player and 'personaje' in all_species:
+            #     possible_targets.insert(0, all_species['personaje']) # Prioridad al jugador
+
+            for prey in possible_targets:
+                dist = math.hypot(self.posicion_x - prey.posicion_x, self.posicion_y - prey.posicion_y)
+                if dist < self.detection_radius:
+                    self.target = prey
+                    self.hunt_state = 'chasing'
+                    break # Encontró un objetivo, deja de buscar
+
+        elif self.hunt_state == 'chasing':
+            # Verificar si el objetivo sigue siendo válido o si el jugador lo ha provocado
+            if self.target is None or self.target.vida <= 0:
+                self.hunt_state = 'wandering'
+                self.target = None
+                return
+
+            distancia = math.hypot(self.posicion_x - self.target.posicion_x, self.posicion_y - self.target.posicion_y)
+
+            # Si la presa escapa del radio de persecución, pierde el interés
+            if distancia > self.chase_radius:
+                self.hunt_state = 'wandering'
+                self.target = None
+                return
+
+            # Lógica de acecho y embestida
+            velocidad_actual = self.salto
+            puede_atacar = ahora - self.last_attack >= self.attack_cooldown
+
+            if distancia < 25 and puede_atacar:
+                # Embestida de ataque
+                self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=self.salto * 2.5)
+                self.last_attack = ahora
+                self.target.vida -= self.attack_power
+                # Devolvemos el daño para que la vista lo muestre
+                return {'damage': self.attack_power, 'target': self.target}
+            else:
+                # Acecho o persecución normal
+                if 25 <= distancia < 75:
+                    velocidad_actual *= 0.5  # Acecho
+                self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=velocidad_actual)
 
 class Herbivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4):
@@ -181,6 +254,12 @@ class Personaje:
         self.frame_index = 0
         self.last_update = pygame.time.get_ticks()
         self.animation_speed = 100 # ms por cuadro
+
+        # Atributos de ataque del jugador
+        self.attack_power = 30
+        self.attack_range = 40
+        self.attack_cooldown = 1.0 # 1 segundo
+        self.last_attack_time = 0
 
     def update_animation(self, animation_strip):
         now = pygame.time.get_ticks()
@@ -345,62 +424,62 @@ class VistaPygame:
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.running = False
+            # --- Lógica de ataque del jugador ---
+            elif event.key == pygame.K_SPACE:
+                ahora = time.time()
+                if ahora - self.personaje.last_attack_time >= self.personaje.attack_cooldown:
+                    self.personaje.last_attack_time = ahora
+                    # Buscar un objetivo en rango
+                    for nombre, especie in self.especies_vivas.items():
+                        dist = math.hypot(self.personaje.posicion_x - especie.posicion_x, self.personaje.posicion_y - especie.posicion_y)
+                        if dist < self.personaje.attack_range:
+                            # El jugador ataca a la especie
+                            especie.vida -= self.personaje.attack_power
+                            self.damage_popups.append({
+                                'text': f"-{int(self.personaje.attack_power)}",
+                                'x': especie.posicion_x,
+                                'y': especie.posicion_y - 10,
+                                'start': pygame.time.get_ticks()
+                            })
 
+                            # Si el objetivo es un carnívoro, provocarlo
+                            if isinstance(especie, Carnivoro):
+                                especie.provoked_by_player = True
+                                # Forzar cambio de objetivo al jugador
+                                especie.target = self.personaje
+                                especie.hunt_state = 'chasing'
+                            break # Ataca solo a un objetivo por pulsación
+    
     def _update_ai(self):
-        """Lógica simple de IA para carnívoro: perseguir y atacar al herbívoro si existe,
-        si no, perseguir y atacar al personaje.
-        """
-        ahora = time.time()
-        if 'carnivoro' not in self.especies_vivas:
-            return
-        carn = self.especies_vivas['carnivoro']
+        """Actualiza el comportamiento de las especies controladas por IA."""
+        # Crear un diccionario con todas las entidades "atacables" para la IA
+        all_entities = self.especies_vivas.copy()
+        all_entities['personaje'] = self.personaje
 
-        # Elegir objetivo: preferir herbívoro si existe
-        if 'herbivoro' in self.especies_vivas:
-            objetivo = self.especies_vivas['herbivoro']
-            objetivo_especie = 'herbivoro'
-        else:
-            objetivo = self.personaje
-            objetivo_especie = 'personaje'
+        for nombre, especie in self.especies_vivas.items():
+            # La lógica de movimiento y ataque ahora está dentro de cada clase
+            # El método mover puede devolver información sobre el ataque
+            attack_info = especie.mover(self.ancho, self.alto, all_entities)
 
-        # Mover hacia objetivo
-        carn.mover_hacia(objetivo.posicion_x, objetivo.posicion_y)
+            if attack_info and isinstance(especie, Carnivoro):
+                # El carnívoro atacó, procesamos el resultado
+                target = attack_info['target']
+                damage = attack_info['damage']
 
-        # Atacar si está lo suficientemente cerca
-        distancia = math.hypot(carn.posicion_x - objetivo.posicion_x, carn.posicion_y - objetivo.posicion_y)
-        if distancia < 25:
-            last = getattr(carn, 'last_attack', 0)
-            if ahora - last >= carn.attack_cooldown:
-                carn.last_attack = ahora
-                if objetivo_especie == 'herbivoro':
-                    # Atacar al herbívoro reduciendo su vida; eliminar si llega a 0
-                    if 'herbivoro' in self.especies_vivas:
-                        objetivo.vida -= carn.attack_power
-                        # Crear popup de daño
-                        self.damage_popups.append({
-                            'text': f"-{int(carn.attack_power)}",
-                            'x': objetivo.posicion_x,
-                            'y': objetivo.posicion_y - 10,
-                            'start': pygame.time.get_ticks()
-                        })
-                        # opcional: imprimir daño en consola para depuración
-                        # print(f"Herbivoro atacado! vida={objetivo.vida}")
-                        if objetivo.vida <= 0:
-                            del self.especies_vivas['herbivoro']
-                else:
-                    # Atacar al jugador reduciendo vida
-                    self.personaje.vida -= carn.attack_power
-                    # Crear popup de daño para el jugador
-                    self.damage_popups.append({
-                        'text': f"-{int(carn.attack_power)}",
-                        'x': self.personaje.posicion_x,
-                        'y': self.personaje.posicion_y - 10,
-                        'start': pygame.time.get_ticks()
-                    })
-                    # print(f"Player attacked! vida={self.personaje.vida}")
-                    if self.personaje.vida <= 0:
-                        # Fin del juego si el jugador muere
+                # Crear popup de daño
+                self.damage_popups.append({
+                    'text': f"-{int(damage)}",
+                    'x': target.posicion_x,
+                    'y': target.posicion_y - 10,
+                    'start': pygame.time.get_ticks()
+                })
+
+                # Verificar si el objetivo murió
+                if target.vida <= 0:
+                    if target is self.personaje:
                         self.running = False
+                    elif 'herbivoro' in self.especies_vivas and target is self.especies_vivas['herbivoro']:
+                        del self.especies_vivas['herbivoro']
 
     def draw(self):
         # Fondo
@@ -495,7 +574,7 @@ class VistaPygame:
             del self.damage_popups[idx]
 
         # Instrucciones
-        instrucciones = self.font.render("Flechas/WASD = mover, ESC = salir", True, (0, 0, 150))
+        instrucciones = self.font.render("Flechas/WASD = mover, Espacio = atacar, ESC = salir", True, (0, 0, 150))
         self.screen.blit(instrucciones, (10, self.alto - 25))
 
         pygame.display.flip()
@@ -555,9 +634,6 @@ class VistaPygame:
             if self.personaje.state != old_state:
                 self.personaje.frame_index = 0
 
-            # Movimiento aleatorio de las especies
-            for nombre, especie in self.especies_vivas.items():
-                especie.mover(self.ancho, self.alto, self.especies_vivas)
 
             # Actualizaciones por tick
             self.personaje.tick_velocidad()

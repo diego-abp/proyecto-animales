@@ -4,7 +4,7 @@ import time
 import random
 
 class Especies:
-    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False, tiempo_vida_max=100, sync_vida_with_tiempo=False):
+    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False, tiempo_vida_max=100, sync_vida_with_tiempo=False, color=(255,255,255), size=15, is_baby=False):
         self.posicion_x = x
         self.posicion_y = y
         # vida es la vida actual (puede bajar por daño), vida_max es la vida inicial máxima
@@ -26,6 +26,17 @@ class Especies:
         self.last_random_move_time = time.time()
         self.random_move_delay = random.uniform(1, 3) # Cambiar de dirección cada 1-3 segundos
         self.random_move_target = None
+        # Atributo para cooldown de reproducción
+        self.ultimo_intento_reproduccion = 0
+        # Atributos para crecimiento y apariencia
+        self.color = color
+        self.max_size = 15 # Tamaño adulto
+        self.size = size
+        self.is_baby = is_baby
+        self.birth_time = time.time()
+        self.growth_duration = 30 # Segundos para crecer a adulto
+        # Atributo para el modo de apareamiento
+        self.mating_mode = False
 
     def take_damage(self, attacker, damage):
         """Aplica daño a la especie y activa un contraataque/huida."""
@@ -118,9 +129,9 @@ class Especies:
                 self.random_move_target = None
 
 class Carnivoro(Especies):
-    def __init__(self, x, y, vida, reproducirse=True, salto=2):
+    def __init__(self, x, y, vida, reproducirse=True, salto=2, color=None, is_baby=False):
         # Los carnívoros tienen tiempo de vida medio (150). Se mueven más rápido para cazar.
-        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=150)
+        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=150, color=color or (255, 0, 0), size=7 if is_baby else 15, is_baby=is_baby)
         # Atributos de ataque
         self.attack_power = 25
         self.attack_cooldown = 2.0
@@ -151,6 +162,27 @@ class Carnivoro(Especies):
             if self.escape_state == 'escaping':
                 self.hunt_state = 'wandering'
                 return None
+
+        # --- Lógica de Apareamiento (si no está cazando ni huyendo) ---
+        # Decide si entra en modo apareamiento aleatoriamente
+        if self.hunt_state == 'wandering' and self.puede_reproducirse() and random.random() < 0.005:
+            self.mating_mode = True
+        
+        # Si no puede reproducirse, sale del modo apareamiento
+        if not self.puede_reproducirse():
+            self.mating_mode = False
+
+        if self.mating_mode:
+            # Buscar una pareja viable
+            pareja = self.buscar_pareja(all_species)
+            if pareja:
+                # Moverse hacia la pareja
+                self.mover_hacia(pareja.posicion_x, pareja.posicion_y)
+                return None # Prioridad es aparearse
+            else:
+                # No encontró pareja, vuelve a deambular
+                self.mating_mode = False
+
 
         # Estados de la IA
         if self.hunt_state == 'wandering':
@@ -203,15 +235,105 @@ class Carnivoro(Especies):
                 self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=velocidad)
                 return None
 
+    def puede_reproducirse(self):
+        """Los carnívoros pueden reproducirse si tienen suficiente vida."""
+        return self.reproducirse and self.vida >= self.vida_max * 0.7
+
+    def reproducir(self, x, y):
+        """Crea una nueva cría de Carnívoro."""
+        # La cría nace con la mitad de la vida máxima de sus padres.
+        vida_cria = self.vida_max // 2
+        # Generar una tonalidad de color ligeramente diferente
+        r = max(0, min(255, self.color[0] + random.randint(-30, 30)))
+        g = max(0, min(255, self.color[1] + random.randint(-30, 30)))
+        b = max(0, min(255, self.color[2] + random.randint(-30, 30)))
+        color_cria = (r, g, b)
+        # Los padres pierden algo de vida al reproducirse
+        self.vida -= self.vida_max * 0.25
+        return Carnivoro(x, y, vida_cria, color=color_cria, is_baby=True)
+
+    def buscar_pareja(self, all_species):
+        """Busca otra instancia de la misma clase para reproducirse."""
+        mejor_pareja = None
+        distancia_min = float('inf')
+        for nombre, otra_especie in all_species.items():
+            if (isinstance(otra_especie, Carnivoro) and 
+                otra_especie is not self and 
+                hasattr(otra_especie, 'puede_reproducirse') and 
+                otra_especie.puede_reproducirse()):
+                
+                dist = math.hypot(self.posicion_x - otra_especie.posicion_x, self.posicion_y - otra_especie.posicion_y)
+                if dist < distancia_min:
+                    distancia_min = dist
+                    mejor_pareja = otra_especie
+        return mejor_pareja
+
 class Herbivoro(Especies):
-    def __init__(self, x, y, vida, reproducirse=True, salto=4):
+    def __init__(self, x, y, vida, reproducirse=True, salto=4, color=None, is_baby=False):
         # Los herbívoros tienen tiempo de vida largo (120)
-        super().__init__(x, y, vida, reproducirse, salto, False, True, True)
+        super().__init__(x, y, vida, reproducirse, salto, False, True, True, color=color or (0, 200, 0), size=7 if is_baby else 15, is_baby=is_baby)
+
+    def puede_reproducirse(self):
+        """Los herbívoros pueden reproducirse si tienen suficiente vida."""
+        return self.reproducirse and self.vida >= self.vida_max * 0.7
+
+    def reproducir(self, x, y):
+        """Crea una nueva cría de Herbívoro."""
+        # La cría nace con la mitad de la vida máxima de sus padres.
+        vida_cria = self.vida_max // 2
+        # Generar una tonalidad de color ligeramente diferente
+        r = max(0, min(255, self.color[0] + random.randint(-30, 30)))
+        g = max(0, min(255, self.color[1] + random.randint(-20, 20)))
+        b = max(0, min(255, self.color[2] + random.randint(-30, 30)))
+        color_cria = (r, g, b)
+        # Los padres pierden algo de vida al reproducirse
+        self.vida -= self.vida_max * 0.25
+        return Herbivoro(x, y, vida_cria, color=color_cria, is_baby=True)
+
+    def mover(self, screen_width, screen_height, all_species={}):
+        """El herbívoro deambula y huye, pero también busca pareja activamente."""
+        # La lógica de huida de la clase base tiene prioridad
+        if self.escape_state == 'escaping':
+            super().mover(screen_width, screen_height, all_species)
+            if self.escape_state == 'escaping': # Comprobar si sigue huyendo
+                self.mating_mode = False # Si huye, no se aparea
+                return
+
+        # --- Lógica de Apareamiento ---
+        if self.puede_reproducirse() and random.random() < 0.005: # Probabilidad de entrar en modo apareamiento
+            self.mating_mode = True
+        
+        if not self.puede_reproducirse():
+            self.mating_mode = False
+
+        if self.mating_mode:
+            pareja = self.buscar_pareja(all_species)
+            if pareja:
+                self.mover_hacia(pareja.posicion_x, pareja.posicion_y)
+                return # Prioridad es aparearse
+            else:
+                self.mating_mode = False # No encontró pareja
+
+        # Si no está huyendo ni buscando pareja, deambula
+        super().mover(screen_width, screen_height, all_species)
+
+    def buscar_pareja(self, all_species):
+        """Busca otra instancia de Herbivoro para reproducirse."""
+        mejor_pareja = None
+        distancia_min = float('inf')
+        for nombre, otra_especie in all_species.items():
+            if (isinstance(otra_especie, Herbivoro) and otra_especie is not self and 
+                hasattr(otra_especie, 'puede_reproducirse') and otra_especie.puede_reproducirse()):
+                dist = math.hypot(self.posicion_x - otra_especie.posicion_x, self.posicion_y - otra_especie.posicion_y)
+                if dist < distancia_min:
+                    distancia_min = dist
+                    mejor_pareja = otra_especie
+        return mejor_pareja
 
 class Omnivoro(Especies):
-    def __init__(self, x, y, vida, reproducirse=True, salto=4):
+    def __init__(self, x, y, vida, reproducirse=True, salto=3, color=None, is_baby=False):
         # Los omnívoros tienen tiempo de vida equilibrado (100)
-        super().__init__(x, y, vida, reproducirse, salto=3, atacar=True, correr=True, comer=True)
+        super().__init__(x, y, vida, reproducirse, salto=salto, atacar=True, correr=True, comer=True, color=color or (128, 0, 128), size=10 if is_baby else 20, is_baby=is_baby)
         self.presa = None
         self.modo_caza = False # Alterna entre cazar y deambular
 
@@ -223,6 +345,24 @@ class Omnivoro(Especies):
         if self.escape_state == 'escaping':
             super().mover(screen_width, screen_height, posibles_presas)
             if self.escape_state == 'escaping': # Comprobar si sigue huyendo
+                self.mating_mode = False # Si huye, no se aparea
+                return
+
+        # --- Lógica de Apareamiento (si no está cazando ni huyendo) ---
+        if not self.modo_caza and self.puede_reproducirse() and random.random() < 0.005:
+            self.mating_mode = True
+        
+        if not self.puede_reproducirse():
+            self.mating_mode = False
+
+        if self.mating_mode:
+            pareja = self.buscar_pareja(posibles_presas)
+            if pareja:
+                self.mover_hacia(pareja.posicion_x, pareja.posicion_y)
+                return # Prioridad es aparearse
+            else:
+                self.mating_mode = False
+
                 return
 
         ahora = time.time()
@@ -263,6 +403,38 @@ class Omnivoro(Especies):
         else:
             # Comportamiento de recolección (similar al herbívoro)
             super().mover(screen_width, screen_height)
+
+    def puede_reproducirse(self):
+        """Los omnívoros pueden reproducirse si tienen suficiente vida."""
+        return self.reproducirse and self.vida >= self.vida_max * 0.7
+
+    def reproducir(self, x, y):
+        """Crea una nueva cría de Omnívoro."""
+        # La cría nace con la mitad de la vida máxima de sus padres.
+        vida_cria = self.vida_max // 2
+        # Generar una tonalidad de color ligeramente diferente
+        r = max(0, min(255, self.color[0] + random.randint(-30, 30)))
+        g = max(0, min(255, self.color[1] + random.randint(-30, 30)))
+        b = max(0, min(255, self.color[2] + random.randint(-20, 20)))
+        color_cria = (r, g, b)
+        # Los padres pierden algo de vida al reproducirse
+        self.vida -= self.vida_max * 0.25
+        return Omnivoro(x, y, vida_cria, color=color_cria, is_baby=True)
+
+    def buscar_pareja(self, all_species):
+        """Busca otra instancia de Omnivoro para reproducirse."""
+        mejor_pareja = None
+        distancia_min = float('inf')
+        for nombre, otra_especie in all_species.items():
+            if (isinstance(otra_especie, Omnivoro) and 
+                otra_especie is not self and 
+                hasattr(otra_especie, 'puede_reproducirse') and 
+                otra_especie.puede_reproducirse()):
+                dist = math.hypot(self.posicion_x - otra_especie.posicion_x, self.posicion_y - otra_especie.posicion_y)
+                if dist < distancia_min:
+                    distancia_min = dist
+                    mejor_pareja = otra_especie
+        return mejor_pareja
 
 class Planta(Especies):
     def __init__(self, x, y, reproducirse=False):
@@ -393,11 +565,14 @@ class VistaPygame:
 
         # Lista de especies vivas
         self.especies_vivas = {
-            'carnivoro': Carnivoro(250, 200, 100, 15),
-            'herbivoro': Herbivoro(10, 200, 100),
-            'omnivoro': Omnivoro(400, 200, 100)
+            'carnivoro_1': Carnivoro(250, 200, 100),
+            'carnivoro_2': Carnivoro(270, 220, 100),
+            'herbivoro_1': Herbivoro(10, 200, 100),
+            'herbivoro_2': Herbivoro(30, 220, 100),
+            'omnivoro_1': Omnivoro(400, 200, 100),
+            'omnivoro_2': Omnivoro(420, 220, 100)
         }
-        # Añadir varias plantas en posiciones aleatorias
+        # Añadir plantas en posiciones aleatorias
         num_plantas = 10
         for i in range(num_plantas):
             x = random.randint(20, self.ancho - 20)
@@ -499,11 +674,13 @@ class VistaPygame:
                         dist = math.hypot(self.personaje.posicion_x - especie.posicion_x, self.personaje.posicion_y - especie.posicion_y)
                         if dist < self.personaje.attack_range:
                             # El jugador ataca a la especie
+                            damage_dealt = self.personaje.attack_power
                             especie.take_damage(self.personaje, self.personaje.attack_power)
                             self.damage_popups.append({
-                                'text': f"-{int(especie.counter_attack_power)}",
-                                'x': self.personaje.posicion_x, 'y': self.personaje.posicion_y - 10, 'start': pygame.time.get_ticks()})
-
+                                'text': f"-{int(damage_dealt)}",
+                                'x': especie.posicion_x, 'y': especie.posicion_y - 10, 'start': pygame.time.get_ticks()})
+                            # Solo ataca a un objetivo por pulsación
+                            break
     def _draw_hp_bar(self, entity, y_offset=-20, width=36, height=6, color_healthy=(0,200,0), color_low=(200,0,0), low_threshold=0.3):
         """Dibuja una barra de vida simple sobre una entidad."""
         try:
@@ -521,11 +698,6 @@ class VistaPygame:
 
     def check_reproduction(self):
         """Verifica y maneja la reproducción de las especies."""
-        # Contar cuántas hay de cada tipo
-        num_carnivoros = sum(1 for nombre in self.especies_vivas if 'carnivoro' in nombre)
-        num_herbivoros = sum(1 for nombre in self.especies_vivas if 'herbivoro' in nombre)
-        num_omnivoros = sum(1 for nombre in self.especies_vivas if 'omnivoro' in nombre)
-
         nuevas_especies = {}
         # Obtener el tiempo actual para el cooldown
         tiempo_actual = time.time()
@@ -533,30 +705,32 @@ class VistaPygame:
         for nombre, especie in self.especies_vivas.items():
             # Verificar cooldown de reproducción
             if hasattr(especie, 'ultimo_intento_reproduccion'):
-                if tiempo_actual - especie.ultimo_intento_reproduccion < 5:  # 5 segundos de cooldown
+                if tiempo_actual - especie.ultimo_intento_reproduccion < 10:  # 10 segundos de cooldown
                     continue
             
             # Comprobar si hay otras especies del mismo tipo cerca
             for otro_nombre, otra_especie in self.especies_vivas.items():
-                if (otro_nombre != nombre and 
-                    type(especie) == type(otra_especie) and
-                    especie.puede_reproducirse() and 
-                    otra_especie.puede_reproducirse()):
+                # Condiciones para reproducirse:
+                # 1. No ser la misma instancia.
+                # 2. Ser de la misma clase (Carnivoro con Carnivoro, etc.).
+                # 3. Ambos deben tener suficiente vida para reproducirse.
+                if (especie is not otra_especie and 
+                    isinstance(otra_especie, type(especie)) and
+                    hasattr(especie, 'puede_reproducirse') and especie.puede_reproducirse() and 
+                    hasattr(otra_especie, 'puede_reproducirse') and otra_especie.puede_reproducirse()):
                     
-                    # Calcular distancia entre especies
-                    dist = math.hypot(especie.posicion_x - otra_especie.posicion_x,
-                                    especie.posicion_y - otra_especie.posicion_y)
-                    
-                    # Si están lo suficientemente cerca, intentar reproducirse
-                    # Verificar límites por tipo de especie
+                    # Verificar que no se exceda el límite de población para este tipo de especie
                     tipo_actual = especie.__class__.__name__.lower()
                     num_actual = sum(1 for nombre in self.especies_vivas if tipo_actual in nombre)
-                    
-                    if ((tipo_actual == 'carnivoro' and num_actual >= 3) or
-                        (tipo_actual == 'herbivoro' and num_actual >= 3) or
-                        (tipo_actual == 'omnivoro' and num_actual >= 3)):
+                    # El límite es 4 (2 iniciales + 2 crías)
+                    if num_actual >= 4:
                         continue
-                        
+
+                    # Calcular distancia entre las dos especies
+                    dist = math.hypot(especie.posicion_x - otra_especie.posicion_x,
+                                      especie.posicion_y - otra_especie.posicion_y)
+                    
+                    # Si están lo suficientemente cerca, se reproducen
                     if dist < 30:  # Distancia más corta para reproducción (casi tocándose)
                         # Posición aleatoria cercana para la nueva especie
                         new_x = especie.posicion_x + random.randint(-30, 30)
@@ -579,14 +753,15 @@ class VistaPygame:
                             
                             # Crear un popup visual para la reproducción
                             self.damage_popups.append({
-                                'text': f"-{int(self.personaje.attack_power)}",
+                                'text': "<3",
                                 'x': especie.posicion_x,
                                 'y': especie.posicion_y - 10,
                                 'start': pygame.time.get_ticks()
                             })
-
-    
-
+                            # Salir del bucle interior para evitar que una misma especie se reproduzca varias veces en un frame
+                            break
+        # Añadir las nuevas especies a la lista principal
+        self.especies_vivas.update(nuevas_especies)
     def _update_plant_healing(self):
         """Gestiona la lógica de curación de las plantas."""
         ahora = time.time()
@@ -630,6 +805,20 @@ class VistaPygame:
                 plant.time_on_plant = 0
                 plant.is_healing = False
 
+    def _update_growth(self):
+        """Gestiona el crecimiento de las crías."""
+        ahora = time.time()
+        for especie in self.especies_vivas.values():
+            if getattr(especie, 'is_baby', False):
+                tiempo_transcurrido = ahora - especie.birth_time
+                if tiempo_transcurrido >= especie.growth_duration:
+                    especie.is_baby = False
+                    especie.size = especie.max_size
+                else:
+                    # Interpolar linealmente el tamaño
+                    progreso = tiempo_transcurrido / especie.growth_duration
+                    tamaño_inicial = especie.max_size / 2
+                    especie.size = tamaño_inicial + (especie.max_size - tamaño_inicial) * progreso
     def _update_ai(self):
         """Actualiza el comportamiento de las especies controladas por IA."""
         # Crear un diccionario con todas las entidades "atacables" para la IA
@@ -709,19 +898,22 @@ class VistaPygame:
         # Dibujar especies vivas
         for nombre, especie in self.especies_vivas.items():
             if isinstance(especie, Carnivoro):
-                pygame.draw.circle(self.screen, (255, 0, 0), 
-                                (int(especie.posicion_x), int(especie.posicion_y)), 15)
+                # Dibuja contorno negro y luego el relleno
+                pygame.draw.circle(self.screen, (0,0,0), (int(especie.posicion_x), int(especie.posicion_y)), int(especie.size) + 1)
+                pygame.draw.circle(self.screen, especie.color, (int(especie.posicion_x), int(especie.posicion_y)), int(especie.size))
                 self._draw_hp_bar(especie)
             elif isinstance(especie, Herbivoro):
-                pygame.draw.circle(self.screen, (0, 200, 0), 
-                                (int(especie.posicion_x), int(especie.posicion_y)), 15)
+                # Dibuja contorno negro y luego el relleno
+                pygame.draw.circle(self.screen, (0,0,0), (int(especie.posicion_x), int(especie.posicion_y)), int(especie.size) + 1)
+                pygame.draw.circle(self.screen, especie.color, (int(especie.posicion_x), int(especie.posicion_y)), int(especie.size))
                 self._draw_hp_bar(especie)
             elif isinstance(especie, Omnivoro):
-                omni_size = 20
+                omni_size = int(especie.size)
                 omni_x = int(especie.posicion_x) - omni_size // 2
                 omni_y = int(especie.posicion_y) - omni_size // 2
-                pygame.draw.rect(self.screen, (128, 0, 128), 
-                              (omni_x, omni_y, omni_size, omni_size))
+                # Dibuja contorno negro y luego el relleno
+                pygame.draw.rect(self.screen, (0,0,0), (omni_x - 1, omni_y - 1, omni_size + 2, omni_size + 2))
+                pygame.draw.rect(self.screen, especie.color, (omni_x, omni_y, omni_size, omni_size))
                 self._draw_hp_bar(especie)
             elif isinstance(especie, Planta):
                 # Dibujar la planta como un triángulo verde con un contorno negro
@@ -821,8 +1013,14 @@ class VistaPygame:
             # IA: actualizar comportamiento de las especies (carnívoro persigue/ataca)
             self._update_ai()
 
+            # Verificar si alguna especie puede reproducirse
+            self.check_reproduction()
+
             # Actualizar lógica de curación de las plantas
             self._update_plant_healing()
+
+            # Actualizar crecimiento de las crías
+            self._update_growth()
 
             # Dibujar
             self.draw()

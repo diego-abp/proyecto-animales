@@ -580,6 +580,21 @@ class VistaPygame:
         self.clock = pygame.time.Clock()
         self.fps = fps
 
+        # --- Cargar y tintar fondo ---
+        try:
+            # Cargar la imagen original
+            background_image = pygame.image.load("assets/fondos/fondos.png").convert()
+            # Escalarla al tamaño de la ventana
+            self.background_image = pygame.transform.scale(background_image, (self.ancho, self.alto))
+            
+            # Crear una superficie para el tinte verde
+            green_tint = pygame.Surface(self.background_image.get_size()).convert_alpha()
+            # Rellenar con un verde semi-transparente (R, G, B, Alpha). Ajusta el último valor (alpha) para más o menos tinte.
+            green_tint.fill((20, 90, 40, 120))
+            self.background_image.blit(green_tint, (0, 0))
+        except pygame.error:
+            self.background_image = None # Si no se encuentra, se usará un color sólido
+
         # --- Generación Procedural de Entidades ---
         self.especies_vivas = {}
         entidades_a_crear = [
@@ -966,7 +981,10 @@ class VistaPygame:
 
     def draw(self):
         # Fondo
-        self.screen.fill((255, 255, 255))
+        if self.background_image:
+            self.screen.blit(self.background_image, (0, 0))
+        else:
+            self.screen.fill((130, 170, 110)) # Color de fondo alternativo si la imagen no carga
         especies_muertas = []
         
         # Comprobar qué especies han muerto por daño y marcarlas para eliminar
@@ -989,9 +1007,18 @@ class VistaPygame:
             flip = self.personaje.direction == 'left'
             image_to_draw = pygame.transform.flip(current_frame, flip, False)
 
-            # Dibujar el sprite centrado en la posición del personaje
-            # Alinear por la parte superior central para que posicion_y represente la parte superior del personaje
+            # --- Dibujar contorno para el jugador ---
+            # Creamos una máscara a partir de la imagen para dibujar solo el contorno de la silueta.
+            mask = pygame.mask.from_surface(image_to_draw)
+            outline_surface = mask.to_surface(setcolor=(0, 0, 0, 255), unsetcolor=(0, 0, 0, 0))
             rect = image_to_draw.get_rect(midtop=(int(self.personaje.posicion_x), int(self.personaje.posicion_y)))
+            # Dibujar el contorno en las 4 direcciones diagonales
+            self.screen.blit(outline_surface, (rect.x - 1, rect.y - 1))
+            self.screen.blit(outline_surface, (rect.x + 1, rect.y - 1))
+            self.screen.blit(outline_surface, (rect.x - 1, rect.y + 1))
+            self.screen.blit(outline_surface, (rect.x + 1, rect.y + 1))
+            
+            # Dibujar el sprite principal encima del contorno
             self.screen.blit(image_to_draw, rect)
         else:
             # Si no hay sprites, dibujar el círculo azul
@@ -1022,12 +1049,13 @@ class VistaPygame:
                 self._draw_hp_bar(especie)
             elif isinstance(especie, Planta):
                 # Dibujar la planta como un triángulo verde con un contorno negro
-                color_contorno = (0, 255, 0) if especie.is_healing else (0, 0, 0)
-                p1 = (int(especie.posicion_x), int(especie.posicion_y) - 8)
-                p2 = (int(especie.posicion_x) - 8, int(especie.posicion_y) + 8)
-                p3 = (int(especie.posicion_x) + 8, int(especie.posicion_y) + 8)
-                # Primero el relleno verde
-                pygame.draw.polygon(self.screen, (0, 100, 0), [p1, p2, p3])
+                color_contorno = (50, 255, 50) if especie.is_healing else (0, 0, 0) # Verde lima brillante al curar
+                size = 12 # Tamaño aumentado
+                p1 = (int(especie.posicion_x), int(especie.posicion_y) - size)
+                p2 = (int(especie.posicion_x) - size, int(especie.posicion_y) + size)
+                p3 = (int(especie.posicion_x) + size, int(especie.posicion_y) + size)
+                # Primero el relleno verde más brillante
+                pygame.draw.polygon(self.screen, (0, 140, 20), [p1, p2, p3])
                 # Luego el contorno (negro por defecto, verde brillante si está curando)
                 pygame.draw.polygon(self.screen, color_contorno, [p1, p2, p3], 2)
 
@@ -1051,8 +1079,16 @@ class VistaPygame:
             del self.damage_popups[idx]
 
         # Instrucciones
-        instrucciones = self.font.render("Flechas/WASD = mover, Espacio = atacar, ESC = salir", True, (0, 0, 150))
-        self.screen.blit(instrucciones, (10, self.alto - 25)) # Se ajusta automáticamente con self.alto
+        # --- Dibujar texto con contorno ---
+        texto_str = "Flechas/WASD = mover, Espacio = atacar, ESC = salir"
+        pos_x, pos_y = 10, self.alto - 25
+        color_texto = (200, 200, 255) # Un azul más claro para que resalte
+        color_contorno = (0, 0, 0)
+        # Dibujar el contorno (texto en negro desplazado)
+        for dx, dy in [(-1, -1), (1, -1), (-1, 1), (1, 1)]:
+            self.screen.blit(self.font.render(texto_str, True, color_contorno), (pos_x + dx, pos_y + dy))
+        # Dibujar el texto principal encima
+        self.screen.blit(self.font.render(texto_str, True, color_texto), (pos_x, pos_y))
 
         pygame.display.flip()
 

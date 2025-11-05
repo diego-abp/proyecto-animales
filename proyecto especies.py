@@ -3,9 +3,8 @@ import math
 import time
 import random
 
-
 class Especies:
-    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False, tiempo_vida_max=100, sync_vida_with_tiempo=False):
+    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False):
         self.posicion_x = x
         self.posicion_y = y
         # vida es la vida actual (puede bajar por daño), vida_max es la vida inicial máxima
@@ -17,10 +16,6 @@ class Especies:
         self.atacar = atacar
         self.correr = correr
         self.comer = comer
-        self.tiempo_vida_max = tiempo_vida_max
-        self.tiempo_vida_actual = tiempo_vida_max
-        self.ultimo_update = time.time()
-        # Si es True, el envejecimiento por tiempo también reduce la vida (HP)
         # Atributos para movimiento aleatorio
         self.last_random_move_time = time.time()
         self.random_move_delay = random.uniform(1, 3) # Cambiar de dirección cada 1-3 segundos
@@ -88,17 +83,23 @@ class Especies:
         # Normalizar y mover
         nx = dx / dist
         ny = dy / dist
-        self.posicion_x += nx * velocidad
-        self.posicion_y += ny * velocidad
+        next_x = self.posicion_x + nx * velocidad
+        next_y = self.posicion_y + ny * velocidad
+
         # Wrap (coincide con límites usados en Personaje)
-        if self.posicion_x < 0:
-            self.posicion_x = 490
-        elif self.posicion_x > 490:
-            self.posicion_x = 0
-        if self.posicion_y < 0:
-            self.posicion_y = 360
-        elif self.posicion_y > 360:
-            self.posicion_y = 0
+        if next_x < 0:
+            next_x = 490
+        elif next_x > 490:
+            next_x = 0
+        
+        if next_y < 0:
+            next_y = 360
+        elif next_y > 360:
+            next_y = 0
+
+        # Actualizar la posición final después de comprobar el wrap
+        self.posicion_x = next_x
+        self.posicion_y = next_y
 
     def mover(self, screen_width, screen_height, posibles_presas={}):
         """Comportamiento de movimiento base: deambular aleatoriamente y buscar pareja."""
@@ -247,7 +248,88 @@ class Carnivoro(Especies):
             # Si no tiene objetivo, moverse aleatoriamente
             super().mover(screen_width, screen_height)
         self.attack_cooldown = 2.0  # segundos entre ataques
-        self.last_attack = 0.0
+        self.last_attack = 0.0      # timestamp del último ataque
+
+        # Atributos para la IA de caza
+        self.hunt_state = 'wandering'  # Estados: 'wandering', 'chasing'
+        self.target = None
+        self.detection_radius = 150  # Radio para empezar a cazar
+        self.chase_radius = 250      # Radio para dejar de cazar si la presa escapa
+        self.provoked_by_player = False # Se vuelve True si el jugador le ataca
+
+    def mover(self, screen_width, screen_height, all_species):
+        """
+        IA del Carnívoro: Deambula, detecta presas, las caza con una estrategia de acecho y embestida,
+        y pierde el interés si se alejan demasiado.
+        """
+        ahora = time.time()
+
+        # La lógica de huida de la clase base tiene prioridad
+        if self.escape_state == 'escaping':
+            super().mover(screen_width, screen_height, all_species)
+            if self.escape_state == 'escaping': # Comprobar si sigue huyendo
+                self.hunt_state = 'wandering' # Si huye, interrumpe la caza
+                return
+
+        # --- Lógica de Estados ---
+        if self.hunt_state == 'wandering':
+            # 1. Deambular aleatoriamente
+            super().mover(screen_width, screen_height)
+            
+            # 2. Buscar presas.
+            possible_targets = []
+            # Si está provocado, el jugador es la máxima prioridad.
+            if self.provoked_by_player and 'personaje' in all_species:
+                self.target = all_species['personaje']
+                self.hunt_state = 'chasing'
+                return # Cambia a modo caza inmediatamente
+
+            # Si no está provocado, busca otras presas (no al jugador).
+            if 'herbivoro' in all_species: possible_targets.append(all_species['herbivoro'])
+            if 'omnivoro' in all_species: possible_targets.append(all_species['omnivoro'])
+            # Descomentar la siguiente línea para que ataque al jugador si está provocado, incluso mientras deambula.
+            # if self.provoked_by_player and 'personaje' in all_species:
+            #     possible_targets.insert(0, all_species['personaje']) # Prioridad al jugador
+
+            for prey in possible_targets:
+                dist = math.hypot(self.posicion_x - prey.posicion_x, self.posicion_y - prey.posicion_y)
+                if dist < self.detection_radius:
+                    self.target = prey
+                    self.hunt_state = 'chasing'
+                    break # Encontró un objetivo, deja de buscar
+
+        elif self.hunt_state == 'chasing':
+            # Verificar si el objetivo sigue siendo válido o si el jugador lo ha provocado
+            if self.target is None or self.target.vida <= 0:
+                self.hunt_state = 'wandering'
+                self.target = None
+                return
+
+            distancia = math.hypot(self.posicion_x - self.target.posicion_x, self.posicion_y - self.target.posicion_y)
+
+            # Si la presa escapa del radio de persecución, pierde el interés
+            if distancia > self.chase_radius:
+                self.hunt_state = 'wandering'
+                self.target = None
+                return
+
+            # Lógica de acecho y embestida
+            velocidad_actual = self.salto
+            puede_atacar = ahora - self.last_attack >= self.attack_cooldown
+
+            if distancia < 25 and puede_atacar:
+                # Embestida de ataque
+                self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=self.salto * 2.5)
+                # Aplicar daño a través del nuevo método para activar contraataque
+                self.target.take_damage(self, self.attack_power)
+                self.last_attack = ahora
+                # Devolvemos el daño para que la vista lo muestre
+                return {'damage': self.attack_power, 'target': self.target}
+            else:
+                # Acecho o persecución normal
+                if 25 <= distancia < 75:
+                    velocidad_actual *= 0.5  # Acecho
+                self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=velocidad_actual)
 
 class Herbivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=3):
@@ -329,6 +411,12 @@ class Omnivoro(Especies):
         """
         Comportamiento mixto: a veces caza, a veces deambula tranquilamente.
         """
+        # La lógica de huida de la clase base tiene prioridad
+        if self.escape_state == 'escaping':
+            super().mover(screen_width, screen_height, posibles_presas)
+            if self.escape_state == 'escaping': # Comprobar si sigue huyendo
+                return
+
         ahora = time.time()
         if ahora - self.last_random_move_time > self.random_move_delay:
             self.last_random_move_time = ahora
@@ -339,7 +427,7 @@ class Omnivoro(Especies):
 
         if self.modo_caza:
             # Comportamiento de caza (similar al carnívoro pero menos agresivo)
-            if self.presa and (self.presa not in posibles_presas.values() or self.presa.get_porcentaje_vida() <= 0):
+            if self.presa and (self.presa not in posibles_presas.values() or self.presa.vida <= 0):
                 self.presa = None
 
             if not self.presa:
@@ -367,10 +455,21 @@ class Omnivoro(Especies):
         else:
             # Comportamiento de recolección (similar al herbívoro)
             super().mover(screen_width, screen_height)
+
 class Planta(Especies):
-    def __init__(self, x, y, vida, reproducirse=True):
-        # Las plantas tienen tiempo de vida muy largo (150)
-        super().__init__(x, y, vida, reproducirse, 0, False, False, False, tiempo_vida_max=150)
+    def __init__(self, x, y, reproducirse=False):
+        # Las plantas son permanentes. No tienen vida ni tiempo de vida.
+        # Pasamos valores dummy a la clase base y desactivamos la reproducción por ahora.
+        super().__init__(x, y, float('inf'), reproducirse, 0, False, False, False)
+        # Atributos para la curación
+        self.healing_target = None
+        self.time_on_plant = 0
+        self.is_healing = False
+        self.heal_amount = 5  # Puntos de vida por segundo
+        self.heal_cooldown = 1.0 # Cura cada segundo
+        self.last_heal_time = 0
+
+    # El método mover de la clase base (deambular) no se aplica a las plantas estáticas.
         
 class Personaje:
     def __init__(self, x, y, vida):
@@ -385,6 +484,7 @@ class Personaje:
         self.posicion_x = x
         self.posicion_y = y
         self.vida = vida
+        self.vida_max = vida
         self.salto = 2
         self.velocidad_extra = 0
         self.ticks_velocidad = 0
@@ -396,6 +496,17 @@ class Personaje:
         self.last_update = pygame.time.get_ticks()
         self.animation_speed = 100 # ms por cuadro
 
+        # Atributos de ataque del jugador
+        self.attack_power = 30
+        self.attack_range = 40
+        self.attack_cooldown = 1.0 # 1 segundo
+        self.last_attack_time = 0
+
+    def take_damage(self, attacker, damage):
+        """El jugador solo recibe daño, no contraataca automáticamente."""
+        self.vida -= damage
+        # Aquí se podría añadir un efecto visual o sonoro para el jugador al ser golpeado.
+
     def update_animation(self, animation_strip):
         now = pygame.time.get_ticks()
         if now - self.last_update > self.animation_speed:
@@ -404,31 +515,35 @@ class Personaje:
 
     def mover_arriba(self):
         salto = self.salto + self.velocidad_extra
-        if self.posicion_y > 0:
-            self.posicion_y -= salto
-        else:
+        next_y = self.posicion_y - salto
+        if next_y < 0:
             self.posicion_y = 360 # Aparece en el borde opuesto
+        else:
+            self.posicion_y = next_y
 
     def mover_abajo(self):
         salto = self.salto + self.velocidad_extra
-        if self.posicion_y < 360:
-            self.posicion_y += salto
-        else:
+        next_y = self.posicion_y + salto
+        if next_y > 360:
             self.posicion_y = 0 # Aparece en el borde opuesto
+        else:
+            self.posicion_y = next_y
 
     def mover_derecha(self):
         salto = self.salto + self.velocidad_extra
-        if self.posicion_x < 490:
-            self.posicion_x += salto
-        else:
+        next_x = self.posicion_x + salto
+        if next_x > 490:
             self.posicion_x = 0 # Aparece en el borde opuesto
+        else:
+            self.posicion_x = next_x
 
     def mover_izquierda(self):
         salto = self.salto + self.velocidad_extra
-        if self.posicion_x > 0:
-            self.posicion_x -= salto
-        else:
+        next_x = self.posicion_x - salto
+        if next_x < 0:
             self.posicion_x = 490 # Aparece en el borde opuesto
+        else:
+            self.posicion_x = next_x
 
     def activar_escudo(self):
         self.escudo_activo = True
@@ -676,60 +791,107 @@ class VistaPygame:
         ahora = time.time()
         if 'carnivoro' not in self.especies_vivas:
             return
-        carn = self.especies_vivas['carnivoro']
 
-        # Elegir objetivo: preferir herbívoro si existe
-        if 'herbivoro' in self.especies_vivas:
-            objetivo = self.especies_vivas['herbivoro']
-            objetivo_especie = 'herbivoro'
-        else:
-            objetivo = self.personaje
-            objetivo_especie = 'personaje'
+        hp_percent = entity.vida / entity.vida_max
+        bar_width = 30
+        bar_height = 5
+        x = entity.posicion_x - bar_width / 2
+        y = entity.posicion_y + y_offset
 
-        # Mover hacia objetivo
-        carn.mover_hacia(objetivo.posicion_x, objetivo.posicion_y)
+        # Color de la barra según el porcentaje de vida
+        color = color_healthy if hp_percent > low_threshold else color_low
 
-        # Atacar si está lo suficientemente cerca
-        distancia = math.hypot(carn.posicion_x - objetivo.posicion_x, carn.posicion_y - objetivo.posicion_y)
-        if distancia < 25:
-            last = getattr(carn, 'last_attack', 0)
-            if ahora - last >= carn.attack_cooldown:
-                carn.last_attack = ahora
-                if objetivo_especie == 'herbivoro':
-                    # Atacar al herbívoro reduciendo su vida; eliminar si llega a 0
-                    if 'herbivoro' in self.especies_vivas:
-                        objetivo.vida -= carn.attack_power
-                        # Crear popup de daño
-                        self.damage_popups.append({
-                            'text': f"-{int(carn.attack_power)}",
-                            'x': objetivo.posicion_x,
-                            'y': objetivo.posicion_y - 10,
-                            'start': pygame.time.get_ticks()
-                        })
-                        # opcional: imprimir daño en consola para depuración
-                        # print(f"Herbivoro atacado! vida={objetivo.vida}")
-                        if objetivo.vida <= 0:
-                            del self.especies_vivas['herbivoro']
+        # Dibujar fondo de la barra (rojo oscuro o gris)
+        pygame.draw.rect(self.screen, (50, 50, 50), (x, y, bar_width, bar_height))
+        # Dibujar barra de vida actual
+        pygame.draw.rect(self.screen, color, (x, y, bar_width * hp_percent, bar_height))
+
+    def _update_plant_healing(self):
+        """Gestiona la lógica de curación de las plantas."""
+        ahora = time.time()
+        all_entities = list(self.especies_vivas.values()) + [self.personaje]
+        
+        # Separar plantas de otras entidades
+        plants = [e for e in self.especies_vivas.values() if isinstance(e, Planta)]
+        movable_entities = [e for e in all_entities if not isinstance(e, Planta)]
+
+        for plant in plants:
+            current_target = None
+            # Comprobar si alguna entidad está sobre la planta
+            for entity in movable_entities:
+                dist = math.hypot(plant.posicion_x - entity.posicion_x, plant.posicion_y - entity.posicion_y)
+                if dist < 15: # Radio de contacto
+                    current_target = entity
+                    break
+            
+            if current_target:
+                if plant.healing_target is current_target:
+                    # La misma entidad sigue en la planta, acumular tiempo
+                    plant.time_on_plant += self.clock.get_time() / 1000.0
                 else:
-                    # Atacar al jugador reduciendo vida
-                    self.personaje.vida -= carn.attack_power
-                    # Crear popup de daño para el jugador
-                    self.damage_popups.append({
-                        'text': f"-{int(carn.attack_power)}",
-                        'x': self.personaje.posicion_x,
-                        'y': self.personaje.posicion_y - 10,
-                        'start': pygame.time.get_ticks()
-                    })
-                    # print(f"Player attacked! vida={self.personaje.vida}")
-                    if self.personaje.vida <= 0:
-                        # Fin del juego si el jugador muere
+                    # Nueva entidad en la planta, reiniciar temporizador
+                    plant.healing_target = current_target
+                    plant.time_on_plant = 0
+                    plant.is_healing = False
+
+                # Si ha estado 2 segundos, empezar a curar
+                if plant.time_on_plant >= 2 and not plant.is_healing:
+                    plant.is_healing = True
+                    plant.last_heal_time = ahora # Iniciar curación inmediatamente
+
+                if plant.is_healing and ahora - plant.last_heal_time >= plant.heal_cooldown:
+                    plant.last_heal_time = ahora
+                    target = plant.healing_target
+                    target.vida = min(target.vida_max, target.vida + plant.heal_amount)
+            else:
+                # Nadie en la planta, resetear estado
+                plant.healing_target = None
+                plant.time_on_plant = 0
+                plant.is_healing = False
+
+    def _update_ai(self):
+        """Actualiza el comportamiento de las especies controladas por IA."""
+        # Crear un diccionario con todas las entidades "atacables" para la IA
+        all_entities = self.especies_vivas.copy()
+        all_entities['personaje'] = self.personaje
+
+        # Iteramos sobre una copia de los items para poder modificar el diccionario original
+        # de forma segura (p. ej., al eliminar una especie que ha muerto).
+        for nombre, especie in list(self.especies_vivas.items()):
+            # Las plantas no se mueven
+            if isinstance(especie, Planta):
+                continue
+            # El método mover puede devolver información sobre el ataque
+            attack_info = especie.mover(self.ancho, self.alto, all_entities)
+
+            if attack_info and isinstance(especie, Carnivoro):
+                # El carnívoro atacó, procesamos el resultado
+                target = attack_info['target']
+                damage = attack_info['damage']
+
+                # Crear popup de daño
+                self.damage_popups.append({
+                    'text': f"-{int(damage)}",
+                    'x': target.posicion_x,
+                    'y': target.posicion_y - 10,
+                    'start': pygame.time.get_ticks()
+                })
+
+                # Verificar si el objetivo murió
+                if target.vida <= 0:
+                    if target is self.personaje:
                         self.running = False
+                    else:
+                        # Eliminar cualquier tipo de especie que haya muerto
+                        # Buscamos la clave del diccionario para eliminarla de forma segura
+                        for key, value in list(self.especies_vivas.items()):
+                            if value is target:
+                                del self.especies_vivas[key]
+                                break
 
     def draw(self):
         # Fondo
         self.screen.fill((255, 255, 255))
-
-        # Actualizar tiempo de vida de las especies
         especies_muertas = []
         
         for nombre, especie in self.especies_vivas.items():
@@ -771,6 +933,9 @@ class VistaPygame:
         else:
             # Si no hay sprites, dibujar el círculo azul
             pygame.draw.circle(self.screen, (0, 0, 255), (int(self.personaje.posicion_x), int(self.personaje.posicion_y)), 15)
+        
+        # Dibujar barra de vida sobre el jugador
+        self._draw_hp_bar(self.personaje, y_offset=-10, color_healthy=(0, 100, 255))
 
         # Contar y mostrar número de cada especie
         num_carnivoros = sum(1 for nombre in self.especies_vivas if 'carnivoro' in nombre)
@@ -831,7 +996,7 @@ class VistaPygame:
             del self.damage_popups[idx]
 
         # Instrucciones
-        instrucciones = self.font.render("Flechas/WASD = mover, ESC = salir", True, (0, 0, 150))
+        instrucciones = self.font.render("Flechas/WASD = mover, Espacio = atacar, ESC = salir", True, (0, 0, 150))
         self.screen.blit(instrucciones, (10, self.alto - 25))
 
         pygame.display.flip()
@@ -891,9 +1056,6 @@ class VistaPygame:
             if self.personaje.state != old_state:
                 self.personaje.frame_index = 0
 
-            # Movimiento aleatorio de las especies
-            for nombre, especie in self.especies_vivas.items():
-                especie.mover(self.ancho, self.alto, self.especies_vivas)
 
             # Actualizaciones por tick
             self.personaje.tick_velocidad()
@@ -903,6 +1065,9 @@ class VistaPygame:
             
             # Verificar reproducción de especies
             self.check_reproduction()
+
+            # Actualizar lógica de curación de las plantas
+            self._update_plant_healing()
 
             # Dibujar
             self.draw()

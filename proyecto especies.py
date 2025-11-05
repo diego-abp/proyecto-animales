@@ -76,14 +76,14 @@ class Especies:
         next_y = self.posicion_y + ny * velocidad
 
         # Wrap (coincide con límites usados en Personaje)
-        if next_x < 0:
-            next_x = 490
-        elif next_x > 490:
+        if next_x < 0: # Usar los límites de la nueva ventana
+            next_x = 960
+        elif next_x > 960:
             next_x = 0
         
-        if next_y < 0:
-            next_y = 360
-        elif next_y > 360:
+        if next_y < 0: # Usar los límites de la nueva ventana
+            next_y = 720
+        elif next_y > 720:
             next_y = 0
 
         # Actualizar la posición final después de comprobar el wrap
@@ -186,9 +186,6 @@ class Carnivoro(Especies):
 
         # Estados de la IA
         if self.hunt_state == 'wandering':
-            # Deambular
-            super().mover(screen_width, screen_height, all_species)
-            # Si el jugador provocó, perseguirlo inmediatamente
             if self.provoked_by_player and 'personaje' in all_species:
                 self.target = all_species['personaje']
                 self.hunt_state = 'chasing'
@@ -206,8 +203,9 @@ class Carnivoro(Especies):
                 if dist < self.detection_radius:
                     self.target = prey
                     self.hunt_state = 'chasing'
-                    break
-
+                    return None # Salir del método mover para procesar la caza en el siguiente frame
+            # Si no se encontró presa, deambular
+            super().mover(screen_width, screen_height, all_species)
             return None
 
         if self.hunt_state == 'chasing':
@@ -333,7 +331,9 @@ class Herbivoro(Especies):
 class Omnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=3, color=None, is_baby=False):
         # Los omnívoros tienen tiempo de vida equilibrado (100)
-        super().__init__(x, y, vida, reproducirse, salto=salto, atacar=True, correr=True, comer=True, color=color or (128, 0, 128), size=10 if is_baby else 20, is_baby=is_baby)
+        # El tamaño se usa como radio, así que un omnívoro de 20x20 tiene un "radio" de 10
+        super().__init__(x, y, vida, reproducirse, salto=salto, atacar=True, correr=True, comer=True, color=color or (128, 0, 128), size=5 if is_baby else 10, is_baby=is_baby)
+        self.max_size = 10 # Tamaño adulto (radio)
         self.presa = None
         self.modo_caza = False # Alterna entre cazar y deambular
 
@@ -362,8 +362,6 @@ class Omnivoro(Especies):
                 return # Prioridad es aparearse
             else:
                 self.mating_mode = False
-
-                return
 
         ahora = time.time()
         if ahora - self.last_random_move_time > self.random_move_delay:
@@ -497,23 +495,23 @@ class Personaje:
         salto = self.salto + self.velocidad_extra
         next_y = self.posicion_y - salto
         if next_y < 0:
-            self.posicion_y = 360 # Aparece en el borde opuesto
+            self.posicion_y = 720
         else:
             self.posicion_y = next_y
 
     def mover_abajo(self):
         salto = self.salto + self.velocidad_extra
         next_y = self.posicion_y + salto
-        if next_y > 360:
-            self.posicion_y = 0 # Aparece en el borde opuesto
+        if next_y > 720:
+            self.posicion_y = 0
         else:
             self.posicion_y = next_y
 
     def mover_derecha(self):
         salto = self.salto + self.velocidad_extra
         next_x = self.posicion_x + salto
-        if next_x > 490:
-            self.posicion_x = 0 # Aparece en el borde opuesto
+        if next_x > 960:
+            self.posicion_x = 0
         else:
             self.posicion_x = next_x
 
@@ -521,7 +519,7 @@ class Personaje:
         salto = self.salto + self.velocidad_extra
         next_x = self.posicion_x - salto
         if next_x < 0:
-            self.posicion_x = 490 # Aparece en el borde opuesto
+            self.posicion_x = 960
         else:
             self.posicion_x = next_x
 
@@ -554,7 +552,7 @@ class VistaPygame:
     - Flechas o WASD: mover
     - ESC o cerrar ventana: salir
     """
-    def __init__(self, ancho=500, alto=400, fps=30):
+    def __init__(self, ancho=960, alto=720, fps=30):
         pygame.init()
         self.ancho = ancho
         self.alto = alto
@@ -565,19 +563,34 @@ class VistaPygame:
 
         # Lista de especies vivas
         self.especies_vivas = {
-            'carnivoro_1': Carnivoro(250, 200, 100),
-            'carnivoro_2': Carnivoro(270, 220, 100),
-            'herbivoro_1': Herbivoro(10, 200, 100),
-            'herbivoro_2': Herbivoro(30, 220, 100),
-            'omnivoro_1': Omnivoro(400, 200, 100),
-            'omnivoro_2': Omnivoro(420, 220, 100)
+            'carnivoro_1': Carnivoro(250, 200, 100, is_baby=False),
+            'carnivoro_2': Carnivoro(270, 220, 100, is_baby=False),
+            'herbivoro_1': Herbivoro(10, 200, 100, is_baby=False),
+            'herbivoro_2': Herbivoro(30, 220, 100, is_baby=False),
+            'omnivoro_1': Omnivoro(400, 200, 100, is_baby=False),
+            'omnivoro_2': Omnivoro(420, 220, 100, is_baby=False)
         }
-        # Añadir plantas en posiciones aleatorias
+        # Añadir plantas en posiciones aleatorias, asegurando que no estén demasiado juntas
         num_plantas = 10
+        min_dist_plantas = 100 # Distancia mínima entre plantas
+        plantas_existentes = []
         for i in range(num_plantas):
-            x = random.randint(20, self.ancho - 20)
-            y = random.randint(20, self.alto - 20)
-            self.especies_vivas[f'planta_{i}'] = Planta(x, y)
+            intentos = 0
+            while intentos < 100: # Evitar bucles infinitos
+                x = random.randint(20, self.ancho - 20)
+                y = random.randint(20, self.alto - 20)
+                
+                # Comprobar distancia con otras plantas
+                demasiado_cerca = False
+                for px, py in plantas_existentes:
+                    if math.hypot(x - px, y - py) < min_dist_plantas:
+                        demasiado_cerca = True
+                        break
+                if not demasiado_cerca:
+                    plantas_existentes.append((x, y))
+                    self.especies_vivas[f'planta_{i}'] = Planta(x, y)
+                    break
+                intentos += 1
 
         self.personaje = Personaje(200, 200, 100)
         # Popups de daño: lista de dict {text,x,y,start_ms}
@@ -720,10 +733,11 @@ class VistaPygame:
                     hasattr(otra_especie, 'puede_reproducirse') and otra_especie.puede_reproducirse()):
                     
                     # Verificar que no se exceda el límite de población para este tipo de especie
-                    tipo_actual = especie.__class__.__name__.lower()
-                    num_actual = sum(1 for nombre in self.especies_vivas if tipo_actual in nombre)
-                    # El límite es 4 (2 iniciales + 2 crías)
-                    if num_actual >= 4:
+                    # Solo puede haber una cría a la vez por tipo de especie.
+                    # Si ya hay una cría de este tipo, no se puede crear otra.
+                    hay_cria_existente = any(
+                        isinstance(e, type(especie)) and getattr(e, 'is_baby', False) for e in self.especies_vivas.values())
+                    if hay_cria_existente:
                         continue
 
                     # Calcular distancia entre las dos especies
@@ -762,6 +776,47 @@ class VistaPygame:
                             break
         # Añadir las nuevas especies a la lista principal
         self.especies_vivas.update(nuevas_especies)
+
+    def _resolve_collisions(self):
+        """Resuelve las colisiones entre entidades de la misma especie para que no se superpongan."""
+        # Obtener todas las entidades móviles
+        movable_entities = [e for e in self.especies_vivas.values() if not isinstance(e, Planta)]
+        
+        # Iterar sobre todos los pares de entidades
+        for i in range(len(movable_entities)):
+            for j in range(i + 1, len(movable_entities)):
+                entity1 = movable_entities[i]
+                entity2 = movable_entities[j]
+
+                # Solo comprobar colisiones entre individuos de la misma clase
+                if type(entity1) is type(entity2):
+                    dist = math.hypot(entity1.posicion_x - entity2.posicion_x, entity1.posicion_y - entity2.posicion_y)
+                    
+                    # El tamaño se usa como radio para las especies circulares. Para el omnívoro (cuadrado), es una aproximación.
+                    combined_radius = entity1.size + entity2.size
+                    
+                    if dist < combined_radius:
+                        # Hay una colisión, empujarlos para separarlos
+                        overlap = combined_radius - dist
+                        
+                        # Evitar división por cero si están exactamente en el mismo punto
+                        if dist == 0:
+                            dist = 0.1
+                            entity1.posicion_x += 0.1 # Mover uno ligeramente
+
+                        # Calcular el vector de empuje (normalizado)
+                        push_x = (entity1.posicion_x - entity2.posicion_x) / dist
+                        push_y = (entity1.posicion_y - entity2.posicion_y) / dist
+                        
+                        # Mover cada entidad la mitad de la superposición
+                        move_amount = overlap / 2
+                        
+                        entity1.posicion_x += push_x * move_amount
+                        entity2.posicion_x -= push_x * move_amount
+                        
+                        entity1.posicion_y += push_y * move_amount
+                        entity2.posicion_y -= push_y * move_amount
+
     def _update_plant_healing(self):
         """Gestiona la lógica de curación de las plantas."""
         ahora = time.time()
@@ -908,7 +963,7 @@ class VistaPygame:
                 pygame.draw.circle(self.screen, especie.color, (int(especie.posicion_x), int(especie.posicion_y)), int(especie.size))
                 self._draw_hp_bar(especie)
             elif isinstance(especie, Omnivoro):
-                omni_size = int(especie.size)
+                omni_size = int(especie.size) * 2 # El tamaño es el radio, el lado del cuadrado es el diámetro
                 omni_x = int(especie.posicion_x) - omni_size // 2
                 omni_y = int(especie.posicion_y) - omni_size // 2
                 # Dibuja contorno negro y luego el relleno
@@ -947,7 +1002,7 @@ class VistaPygame:
 
         # Instrucciones
         instrucciones = self.font.render("Flechas/WASD = mover, Espacio = atacar, ESC = salir", True, (0, 0, 150))
-        self.screen.blit(instrucciones, (10, self.alto - 25))
+        self.screen.blit(instrucciones, (10, self.alto - 25)) # Se ajusta automáticamente con self.alto
 
         pygame.display.flip()
 
@@ -1012,6 +1067,9 @@ class VistaPygame:
 
             # IA: actualizar comportamiento de las especies (carnívoro persigue/ataca)
             self._update_ai()
+
+            # Resolver colisiones entre especies
+            self._resolve_collisions()
 
             # Verificar si alguna especie puede reproducirse
             self.check_reproduction()

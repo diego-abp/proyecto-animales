@@ -24,7 +24,7 @@ class Especies:
         self.escape_state = None
         # Atributos para movimiento aleatorio
         self.last_random_move_time = time.time()
-        self.random_move_delay = random.uniform(1, 3) # Cambiar de dirección cada 1-3 segundos
+        self.random_move_delay = random.uniform(0.5, 2.5) # Desincronizar el primer movimiento
         self.random_move_target = None
         # Atributo para cooldown de reproducción
         self.ultimo_intento_reproduccion = 0
@@ -37,6 +37,13 @@ class Especies:
         self.growth_duration = 30 # Segundos para crecer a adulto
         # Atributo para el modo de apareamiento
         self.mating_mode = False
+        # --- ATRIBUTOS DE "PERSONALIDAD" PARA MOVIMIENTO ÚNICO ---
+        # Cada individuo tendrá valores ligeramente diferentes para que no se muevan igual.
+        self.wander_speed_multiplier = random.uniform(0.8, 1.2) # Algunos pasean más rápido/lento
+        self.wander_change_frequency_multiplier = random.uniform(0.7, 1.5) # Algunos cambian de dirección más/menos a menudo
+        self.wander_pause_chance = random.uniform(0.001, 0.005) # Probabilidad de detenerse un momento
+        self.is_paused = False
+        self.pause_end_time = 0
 
     def take_damage(self, attacker, damage):
         """Aplica daño a la especie y activa un contraataque/huida."""
@@ -112,21 +119,33 @@ class Especies:
                     self.mover_hacia(self.posicion_x + dx, self.posicion_y + dy, velocidad=velocidad_escape)
                 return # Durante la huida, no hacer nada más
 
+        # --- Lógica de Pausa (Personalidad) ---
+        if self.is_paused:
+            if ahora > self.pause_end_time:
+                self.is_paused = False
+            else:
+                return # No moverse mientras está en pausa
+        elif random.random() < self.wander_pause_chance:
+            self.is_paused = True
+            self.pause_end_time = ahora + random.uniform(0.5, 1.5)
+
         # --- Lógica de Deambulación (si no está huyendo) ---
         ahora = time.time()
-        # Si no tiene objetivo o ha pasado suficiente tiempo, elige uno nuevo
-        if self.random_move_target is None or ahora - self.last_random_move_time > self.random_move_delay:
+        # Si llega cerca del objetivo o ha pasado suficiente tiempo, elige uno nuevo.
+        # Esto crea un movimiento más continuo y menos propenso a detenerse.
+        dist_to_target = math.hypot(self.posicion_x - (self.random_move_target[0] if self.random_move_target else self.posicion_x), 
+                                 self.posicion_y - (self.random_move_target[1] if self.random_move_target else self.posicion_y))
+
+        if self.random_move_target is None or dist_to_target < 50 or ahora - self.last_random_move_time > self.random_move_delay:
             self.last_random_move_time = ahora
-            self.random_move_delay = random.uniform(2, 5) # Nuevo intervalo
+            # El delay se ve afectado por la "personalidad" del animal
+            self.random_move_delay = random.uniform(2, 5) * self.wander_change_frequency_multiplier
             # Elige un punto aleatorio en la pantalla
             self.random_move_target = (random.randint(0, screen_width), random.randint(0, screen_height))
 
         # Moverse hacia el objetivo aleatorio
         if self.random_move_target:
-            self.mover_hacia(self.random_move_target[0], self.random_move_target[1])
-            # Si llega cerca del objetivo, lo olvida para poder elegir uno nuevo
-            if math.hypot(self.posicion_x - self.random_move_target[0], self.posicion_y - self.random_move_target[1]) < 10:
-                self.random_move_target = None
+            self.mover_hacia(self.random_move_target[0], self.random_move_target[1], velocidad=self.salto * self.wander_speed_multiplier)
 
 class Carnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=2, color=None, is_baby=False):
@@ -397,10 +416,10 @@ class Omnivoro(Especies):
                     self.posicion_x += (dx / dist) * velocidad_caza
                     self.posicion_y += (dy / dist) * velocidad_caza
             else: # Si no encuentra presa en modo caza, deambula
-                super().mover(screen_width, screen_height)
+                super().mover(screen_width, screen_height, posibles_presas)
         else:
             # Comportamiento de recolección (similar al herbívoro)
-            super().mover(screen_width, screen_height)
+            super().mover(screen_width, screen_height, posibles_presas)
 
     def puede_reproducirse(self):
         """Los omnívoros pueden reproducirse si tienen suficiente vida."""
@@ -561,36 +580,41 @@ class VistaPygame:
         self.clock = pygame.time.Clock()
         self.fps = fps
 
-        # Lista de especies vivas
-        self.especies_vivas = {
-            'carnivoro_1': Carnivoro(250, 200, 100, is_baby=False),
-            'carnivoro_2': Carnivoro(270, 220, 100, is_baby=False),
-            'herbivoro_1': Herbivoro(10, 200, 100, is_baby=False),
-            'herbivoro_2': Herbivoro(30, 220, 100, is_baby=False),
-            'omnivoro_1': Omnivoro(400, 200, 100, is_baby=False),
-            'omnivoro_2': Omnivoro(420, 220, 100, is_baby=False)
-        }
-        # Añadir plantas en posiciones aleatorias, asegurando que no estén demasiado juntas
-        num_plantas = 10
-        min_dist_plantas = 100 # Distancia mínima entre plantas
-        plantas_existentes = []
-        for i in range(num_plantas):
-            intentos = 0
-            while intentos < 100: # Evitar bucles infinitos
-                x = random.randint(20, self.ancho - 20)
-                y = random.randint(20, self.alto - 20)
-                
-                # Comprobar distancia con otras plantas
-                demasiado_cerca = False
-                for px, py in plantas_existentes:
-                    if math.hypot(x - px, y - py) < min_dist_plantas:
-                        demasiado_cerca = True
+        # --- Generación Procedural de Entidades ---
+        self.especies_vivas = {}
+        entidades_a_crear = [
+            (Carnivoro, "carnivoro", 2),
+            (Herbivoro, "herbivoro", 2),
+            (Omnivoro, "omnivoro", 2),
+            (Planta, "planta", 10)
+        ]
+        
+        min_dist_entidades = 100 # Distancia mínima entre cualquier par de entidades
+
+        for clase_entidad, nombre_base, cantidad in entidades_a_crear:
+            for i in range(cantidad):
+                intentos = 0
+                while intentos < 100: # Evitar bucles infinitos
+                    x = random.randint(20, self.ancho - 20)
+                    y = random.randint(20, self.alto - 20)
+                    
+                    # Comprobar distancia con todas las entidades ya creadas
+                    demasiado_cerca = False
+                    for entidad_existente in self.especies_vivas.values():
+                        if math.hypot(x - entidad_existente.posicion_x, y - entidad_existente.posicion_y) < min_dist_entidades:
+                            demasiado_cerca = True
+                            break
+                    
+                    if not demasiado_cerca:
+                        nombre_unico = f"{nombre_base}_{i+1}"
+                        if issubclass(clase_entidad, Planta):
+                            self.especies_vivas[nombre_unico] = clase_entidad(x, y)
+                        else: # Para animales
+                            self.especies_vivas[nombre_unico] = clase_entidad(x, y, 100, is_baby=False)
                         break
-                if not demasiado_cerca:
-                    plantas_existentes.append((x, y))
-                    self.especies_vivas[f'planta_{i}'] = Planta(x, y)
-                    break
-                intentos += 1
+                    intentos += 1
+
+        # Añadir plantas en posiciones aleatorias, asegurando que no estén demasiado juntas
 
         self.personaje = Personaje(200, 200, 100)
         # Popups de daño: lista de dict {text,x,y,start_ms}
@@ -760,6 +784,32 @@ class VistaPygame:
                             especie.ultimo_intento_reproduccion = tiempo_actual
                             otra_especie.ultimo_intento_reproduccion = tiempo_actual
                             
+                            # --- SEPARACIÓN POST-REPRODUCCIÓN ---
+                            # Empujar a los padres en direcciones opuestas para que no se queden atascados.
+                            # Y también a la cría para que no aparezca encima de ellos.
+                            push_force_parents = 30
+                            push_force_baby = 40
+                            dx = especie.posicion_x - otra_especie.posicion_x
+                            dy = especie.posicion_y - otra_especie.posicion_y
+                            
+                            # Normalizar el vector de empuje
+                            if dist > 0:
+                                # Empujar a los padres
+                                push_x = (dx / dist) * push_force_parents
+                                push_y = (dy / dist) * push_force_parents
+                                especie.posicion_x += push_x
+                                especie.posicion_y += push_y
+                                otra_especie.posicion_x -= push_x
+                                otra_especie.posicion_y -= push_y
+                                
+                                # Empujar a la cría lejos del punto medio de los padres
+                                # Usamos un vector perpendicular para que no salga en la misma línea
+                                nueva_especie.posicion_x -= push_y * (push_force_baby / push_force_parents)
+                                nueva_especie.posicion_y += push_x * (push_force_baby / push_force_parents)
+
+                            # Salir del modo de apareamiento
+                            especie.mating_mode = False
+                            otra_especie.mating_mode = False
                             # Generar un nuevo nombre único para la especie
                             base_name = especie.__class__.__name__.lower()
                             new_name = f"{base_name}_{len(self.especies_vivas) + len(nuevas_especies)}"

@@ -4,7 +4,7 @@ import time
 import random
 
 class Especies:
-    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False):
+    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False, tiempo_vida_max=100, sync_vida_with_tiempo=False):
         self.posicion_x = x
         self.posicion_y = y
         # vida es la vida actual (puede bajar por daño), vida_max es la vida inicial máxima
@@ -16,11 +16,17 @@ class Especies:
         self.atacar = atacar
         self.correr = correr
         self.comer = comer
+        # Tiempo de vida (duración) y sincronización con HP
+        self.tiempo_vida_max = tiempo_vida_max
+        self.tiempo_vida_actual = tiempo_vida_max
+        self.ultimo_update = time.time()
+        self.sync_vida_with_tiempo = sync_vida_with_tiempo
+        # Estado de huida/escape (usado por subclases que implementan huida)
+        self.escape_state = None
         # Atributos para movimiento aleatorio
         self.last_random_move_time = time.time()
         self.random_move_delay = random.uniform(1, 3) # Cambiar de dirección cada 1-3 segundos
         self.random_move_target = None
-        self.sync_vida_with_tiempo = sync_vida_with_tiempo
 
     def update_tiempo_vida(self):
         """Actualiza el tiempo de vida de la especie. Devuelve True si sigue viva, False si ha muerto."""
@@ -141,115 +147,16 @@ class Carnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=2):
         # Los carnívoros tienen tiempo de vida medio (150). Se mueven más rápido para cazar.
         super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=150)
-        # Atributos de ataque: menos daño por golpe y cooldown menor cuando ataca al personaje
+        # Atributos de ataque
         self.attack_power = 25
         self.attack_cooldown = 2.0
-        self.last_attack = 0
-        # El daño es mayor contra el personaje cuando no hay herbívoros
+        self.last_attack = 0.0
+        # Daño y cooldown especiales contra el jugador
         self.player_attack_power = 35
-        self.player_attack_cooldown = 1.5  # Ataca más rápido al personaje
+        self.player_attack_cooldown = 1.5
+        # Estado y objetivos
         self.objetivo = None
         self.tiempo_busqueda = 0
-
-    def mover(self, screen_width, screen_height, posibles_presas={}):
-        """Los carnívoros alternan entre buscar pareja y cazar."""
-        ahora = time.time()
-        
-        # Cada 5 segundos cambia entre modo caza y reproducción
-        if ahora - self.tiempo_busqueda > 5:
-            self.tiempo_busqueda = ahora
-            self.objetivo = None  # Reset objetivo
-        
-        # Si no tiene objetivo, buscar el más cercano
-        if not self.objetivo:
-            menor_distancia = float('inf')
-            
-            # Primero buscar pareja si no hay 3 carnívoros
-            num_carnivoros = sum(1 for otra in posibles_presas.values() 
-                               if isinstance(otra, Carnivoro))
-            
-            if num_carnivoros < 3:
-                for otra in posibles_presas.values():
-                    if isinstance(otra, Carnivoro) and otra is not self:
-                        dist = math.hypot(self.posicion_x - otra.posicion_x,
-                                        self.posicion_y - otra.posicion_y)
-                        if dist < menor_distancia:
-                            menor_distancia = dist
-                            self.objetivo = ('pareja', otra)
-            
-            # Si no busca pareja o no encuentra, buscar presa
-            if not self.objetivo:
-                # Verificar si hay herbívoros vivos
-                hay_herbivoros = False
-                for otra in posibles_presas.values():
-                    if isinstance(otra, Herbivoro):
-                        hay_herbivoros = True
-                        dist = math.hypot(self.posicion_x - otra.posicion_x,
-                                        self.posicion_y - otra.posicion_y)
-                        if dist < menor_distancia:
-                            menor_distancia = dist
-                            self.objetivo = ('presa', otra)
-                
-                # Si no hay herbívoros, perseguir al jugador
-                if not hay_herbivoros:
-                    for otra in posibles_presas.values():
-                        if not isinstance(otra, (Carnivoro, Omnivoro, Herbivoro)):
-                            dist = math.hypot(self.posicion_x - otra.posicion_x,
-                                            self.posicion_y - otra.posicion_y)
-                            if dist < menor_distancia:
-                                menor_distancia = dist
-                                self.objetivo = ('presa', otra)
-        
-        # Moverse hacia el objetivo
-        if self.objetivo:
-            tipo, objetivo = self.objetivo
-            dist = math.hypot(self.posicion_x - objetivo.posicion_x,
-                            self.posicion_y - objetivo.posicion_y)
-            
-            if tipo == 'presa':
-                # Perseguir y atacar
-                velocidad = self.salto * 1.2  # Más rápido al cazar
-                if dist < 30:  # Distancia de ataque
-                    # Atacar si el cooldown lo permite
-                    cooldown_actual = (self.player_attack_cooldown 
-                                     if not isinstance(objetivo, Herbivoro) 
-                                     else self.attack_cooldown)
-                    if ahora - self.last_attack >= cooldown_actual:
-                        self.last_attack = ahora
-                        if isinstance(objetivo, Herbivoro):
-                            objetivo.vida -= self.attack_power
-                            if self.vista:
-                                # Mostrar el daño causado
-                                self.vista.damage_popups.append({
-                                    'text': f"-{int(self.attack_power)}",
-                                    'x': objetivo.posicion_x,
-                                    'y': objetivo.posicion_y - 20,
-                                    'start': pygame.time.get_ticks()
-                                })
-                        else:  # Es el personaje
-                            objetivo.vida -= self.player_attack_power
-                            if self.vista:
-                                # Mostrar el daño causado al personaje
-                                self.vista.damage_popups.append({
-                                    'text': f"-{int(self.player_attack_power)}",
-                                    'x': objetivo.posicion_x,
-                                    'y': objetivo.posicion_y - 20,
-                                    'start': pygame.time.get_ticks()
-                                })
-                else:
-                    self.mover_hacia(objetivo.posicion_x, objetivo.posicion_y, velocidad)
-            
-            else:  # tipo == 'pareja'
-                # Moverse para reproducirse
-                if dist > 10:
-                    self.mover_hacia(objetivo.posicion_x, objetivo.posicion_y, self.salto)
-        
-        else:
-            # Si no tiene objetivo, moverse aleatoriamente
-            super().mover(screen_width, screen_height)
-        self.attack_cooldown = 2.0  # segundos entre ataques
-        self.last_attack = 0.0      # timestamp del último ataque
-
         # Atributos para la IA de caza
         self.hunt_state = 'wandering'  # Estados: 'wandering', 'chasing'
         self.target = None
@@ -260,76 +167,67 @@ class Carnivoro(Especies):
     def mover(self, screen_width, screen_height, all_species):
         """
         IA del Carnívoro: Deambula, detecta presas, las caza con una estrategia de acecho y embestida,
-        y pierde el interés si se alejan demasiado.
+        y pierde el interés si se alejan demasiado. Devuelve un dict {'damage', 'target'} si ataca.
         """
         ahora = time.time()
 
-        # La lógica de huida de la clase base tiene prioridad
-        if self.escape_state == 'escaping':
+        # Si estamos en modo escape (heredado), respetarlo
+        if getattr(self, 'escape_state', None) == 'escaping':
             super().mover(screen_width, screen_height, all_species)
-            if self.escape_state == 'escaping': # Comprobar si sigue huyendo
-                self.hunt_state = 'wandering' # Si huye, interrumpe la caza
-                return
+            if self.escape_state == 'escaping':
+                self.hunt_state = 'wandering'
+                return None
 
-        # --- Lógica de Estados ---
+        # Estados de la IA
         if self.hunt_state == 'wandering':
-            # 1. Deambular aleatoriamente
-            super().mover(screen_width, screen_height)
-            
-            # 2. Buscar presas.
-            possible_targets = []
-            # Si está provocado, el jugador es la máxima prioridad.
+            # Deambular
+            super().mover(screen_width, screen_height, all_species)
+            # Si el jugador provocó, perseguirlo inmediatamente
             if self.provoked_by_player and 'personaje' in all_species:
                 self.target = all_species['personaje']
                 self.hunt_state = 'chasing'
-                return # Cambia a modo caza inmediatamente
+                return None
 
-            # Si no está provocado, busca otras presas (no al jugador).
-            if 'herbivoro' in all_species: possible_targets.append(all_species['herbivoro'])
-            if 'omnivoro' in all_species: possible_targets.append(all_species['omnivoro'])
-            # Descomentar la siguiente línea para que ataque al jugador si está provocado, incluso mientras deambula.
-            # if self.provoked_by_player and 'personaje' in all_species:
-            #     possible_targets.insert(0, all_species['personaje']) # Prioridad al jugador
+            # Buscar presas prioritarias: herbívoros, luego omnívoros
+            posibles = []
+            if 'herbivoro' in all_species:
+                posibles.append(all_species['herbivoro'])
+            if 'omnivoro' in all_species:
+                posibles.append(all_species['omnivoro'])
 
-            for prey in possible_targets:
+            for prey in posibles:
                 dist = math.hypot(self.posicion_x - prey.posicion_x, self.posicion_y - prey.posicion_y)
                 if dist < self.detection_radius:
                     self.target = prey
                     self.hunt_state = 'chasing'
-                    break # Encontró un objetivo, deja de buscar
+                    break
 
-        elif self.hunt_state == 'chasing':
-            # Verificar si el objetivo sigue siendo válido o si el jugador lo ha provocado
-            if self.target is None or self.target.vida <= 0:
+            return None
+
+        if self.hunt_state == 'chasing':
+            if self.target is None or getattr(self.target, 'vida', 1) <= 0:
                 self.hunt_state = 'wandering'
                 self.target = None
-                return
+                return None
 
             distancia = math.hypot(self.posicion_x - self.target.posicion_x, self.posicion_y - self.target.posicion_y)
-
-            # Si la presa escapa del radio de persecución, pierde el interés
             if distancia > self.chase_radius:
                 self.hunt_state = 'wandering'
                 self.target = None
-                return
+                return None
 
-            # Lógica de acecho y embestida
-            velocidad_actual = self.salto
-            puede_atacar = ahora - self.last_attack >= self.attack_cooldown
-
+            # Prepararse para atacar
+            puede_atacar = (ahora - self.last_attack) >= self.attack_cooldown
             if distancia < 25 and puede_atacar:
-                # Embestida de ataque
-                self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=self.salto * 2.5)
-                # Aplicar daño a través del nuevo método para activar contraataque
-                self.target.take_damage(self, self.attack_power)
+                # Embestida: infligir daño y devolver info para que la vista lo muestre
+                self.target.vida = max(0, self.target.vida - self.attack_power)
                 self.last_attack = ahora
-                # Devolvemos el daño para que la vista lo muestre
                 return {'damage': self.attack_power, 'target': self.target}
             else:
-                # Acecho o persecución normal
-                if 25 <= distancia < 75:
-                    velocidad_actual *= 0.5  # Acecho
-                self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=velocidad_actual)
+                # Acecho/persecución
+                velocidad = self.salto * (0.5 if 25 <= distancia < 75 else 1.0)
+                self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=velocidad)
+                return None
 
 class Herbivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=3):
@@ -696,6 +594,21 @@ class VistaPygame:
             if event.key == pygame.K_ESCAPE:
                 self.running = False
 
+    def _draw_hp_bar(self, entity, y_offset=-20, width=36, height=6, color_healthy=(0,200,0), color_low=(200,0,0), low_threshold=0.3):
+        """Dibuja una barra de vida simple sobre una entidad."""
+        try:
+            hp_percent = max(0.0, min(1.0, entity.vida / entity.vida_max))
+        except Exception:
+            return
+        x = int(entity.posicion_x - width // 2)
+        y = int(entity.posicion_y + y_offset)
+        # Fondo
+        pygame.draw.rect(self.screen, (50,50,50), (x, y, width, height))
+        # Color según porcentaje
+        color = color_healthy if hp_percent > low_threshold else color_low
+        # Barra de vida
+        pygame.draw.rect(self.screen, color, (x, y, int(width * hp_percent), height))
+
     def check_reproduction(self):
         """Verifica y maneja la reproducción de las especies."""
         # Contar cuántas hay de cada tipo
@@ -784,27 +697,7 @@ class VistaPygame:
                             break  # Solo una reproducción por ciclo        # Agregar las nuevas especies al diccionario
         self.especies_vivas.update(nuevas_especies)
 
-    def _update_ai(self):
-        """Lógica simple de IA para carnívoro: perseguir y atacar al herbívoro si existe,
-        si no, perseguir y atacar al personaje.
-        """
-        ahora = time.time()
-        if 'carnivoro' not in self.especies_vivas:
-            return
-
-        hp_percent = entity.vida / entity.vida_max
-        bar_width = 30
-        bar_height = 5
-        x = entity.posicion_x - bar_width / 2
-        y = entity.posicion_y + y_offset
-
-        # Color de la barra según el porcentaje de vida
-        color = color_healthy if hp_percent > low_threshold else color_low
-
-        # Dibujar fondo de la barra (rojo oscuro o gris)
-        pygame.draw.rect(self.screen, (50, 50, 50), (x, y, bar_width, bar_height))
-        # Dibujar barra de vida actual
-        pygame.draw.rect(self.screen, color, (x, y, bar_width * hp_percent, bar_height))
+    
 
     def _update_plant_healing(self):
         """Gestiona la lógica de curación de las plantas."""

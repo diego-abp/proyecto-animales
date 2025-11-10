@@ -4,7 +4,7 @@ import time
 import random
 
 class Especies:
-    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False, tiempo_vida_max=100, sync_vida_with_tiempo=False, color=(255,255,255), size=15, is_baby=False):
+    def __init__(self, x, y, vida, reproducirse, salto=5, atacar=False, correr=False, comer=False, tiempo_vida_max=100, sync_vida_with_tiempo=False, color=(255,255,255), size=15, is_baby=False, is_champion=False):
         self.posicion_x = x
         self.posicion_y = y
         # vida es la vida actual (puede bajar por daño), vida_max es la vida inicial máxima
@@ -33,10 +33,13 @@ class Especies:
         self.max_size = 15 # Tamaño adulto
         self.size = size
         self.is_baby = is_baby
+        self.is_champion = is_champion
         self.birth_time = time.time()
         self.growth_duration = 30 # Segundos para crecer a adulto
         # Atributo para el modo de apareamiento
         self.mating_mode = False
+        self.emergency_partner = None # Para saber a quién buscar en emergencia
+        self.emergency_mating_mode = False # Nuevo modo para cruce de especies
         # --- ATRIBUTOS DE "PERSONALIDAD" PARA MOVIMIENTO ÚNICO ---
         # Cada individuo tendrá valores ligeramente diferentes para que no se muevan igual.
         self.wander_speed_multiplier = random.uniform(0.8, 1.2) # Algunos pasean más rápido/lento
@@ -44,6 +47,9 @@ class Especies:
         self.wander_pause_chance = random.uniform(0.001, 0.005) # Probabilidad de detenerse un momento
         self.is_paused = False
         self.pause_end_time = 0
+        # Atributos de contraataque
+        self.counter_attack_power = 1
+        self.pushback_force = 40 # Fuerza de empuje al ser atacado
 
     def update_vida_por_tiempo(self):
         """
@@ -64,13 +70,13 @@ class Especies:
         if self.vida > 0 and attacker is not None:
             # Contraatacar: empujar y dañar levemente al atacante
             if hasattr(attacker, 'vida'):
-                attacker.vida -= self.counter_attack_power
+                attacker.vida = max(0, attacker.vida - self.counter_attack_power)
             
             dx = attacker.posicion_x - self.posicion_x
             dy = attacker.posicion_y - self.posicion_y
             dist = math.hypot(dx, dy)
             if dist > 0:
-                attacker.posicion_x += (dx / dist) * self.pushback_force
+                attacker.posicion_x += (dx / dist) * self.pushback_force # Empujar al agresor
                 attacker.posicion_y += (dy / dist) * self.pushback_force
 
             # Entrar en estado de huida
@@ -160,10 +166,24 @@ class Especies:
         if self.random_move_target:
             self.mover_hacia(self.random_move_target[0], self.random_move_target[1], velocidad=self.salto * self.wander_speed_multiplier)
 
+    def buscar_planta_cercana(self, all_species):
+        """Busca la planta más cercana para curarse."""
+        planta_cercana = None
+        # Radio de detección grande para buscar curación
+        distancia_min = 400 
+        for entidad in all_species.values():
+            if isinstance(entidad, Planta):
+                dist = math.hypot(self.posicion_x - entidad.posicion_x, self.posicion_y - entidad.posicion_y)
+                if dist < distancia_min:
+                    distancia_min = dist
+                    planta_cercana = entidad
+        return planta_cercana
+
+
 class Carnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=2, color=None, is_baby=False):
         # Los carnívoros tienen un tiempo de vida de 2 minutos (120s). Se mueven más rápido para cazar.
-        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=120, color=color or (255, 0, 0), size=7 if is_baby else 15, is_baby=is_baby)
+        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=120, color=color or (255, 0, 0), size=7 if is_baby else 15, is_baby=is_baby, is_champion=False)
         # Atributos de ataque
         self.attack_power = 25
         self.attack_cooldown = 2.0
@@ -195,6 +215,19 @@ class Carnivoro(Especies):
             if self.escape_state == 'escaping':
                 self.hunt_state = 'wandering'
                 return None
+
+        # --- LÓGICA DE BÚSQUEDA DE CURACIÓN (ALTA PRIORIDAD) ---
+        if self.vida < self.vida_max * 0.35:
+            planta_curativa = self.buscar_planta_cercana(all_species)
+            if planta_curativa:
+                # Anular otras acciones y moverse hacia la planta
+                self.mating_mode = False
+                self.hunt_state = 'wandering'
+                self.food_target = None
+                self.target = None
+                self.mover_hacia(planta_curativa.posicion_x, planta_curativa.posicion_y)
+                return None # Prioridad es curarse
+
 
         # --- Lógica de Apareamiento (si no está cazando ni huyendo) ---
         # Decide si entra en modo apareamiento aleatoriamente
@@ -344,26 +377,50 @@ class Carnivoro(Especies):
 class Herbivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4, color=None, is_baby=False):
         # Los herbívoros tienen un tiempo de vida de 2 minutos (120s)
-        super().__init__(x, y, vida, reproducirse, salto, False, True, True, tiempo_vida_max=120, color=color or (0, 200, 0), size=7 if is_baby else 15, is_baby=is_baby)
+        super().__init__(x, y, vida, reproducirse, salto, False, True, True, tiempo_vida_max=120, color=color or (0, 200, 0), size=7 if is_baby else 15, is_baby=is_baby, is_champion=False)
 
     def puede_reproducirse(self):
         """Los herbívoros pueden reproducirse si tienen suficiente vida."""
         return self.reproducirse and self.vida >= self.vida_max * 0.7
 
-    def reproducir(self, x, y):
+    def reproducir(self, x, y, is_champion=False): # Added is_champion parameter
         """Crea una nueva cría de Herbívoro."""
-        # La cría nace con la mitad de la vida máxima de sus padres.
-        vida_cria = self.vida_max // 2
-        # Generar una tonalidad de color ligeramente diferente
-        r = max(0, min(255, self.color[0] + random.randint(-30, 30)))
-        g = max(0, min(255, self.color[1] + random.randint(-20, 20)))
-        b = max(0, min(255, self.color[2] + random.randint(-30, 30)))
-        color_cria = (r, g, b)
-        # Los padres pierden algo de vida al reproducirse
-        self.vida -= self.vida_max * 0.25
-        return Herbivoro(x, y, vida_cria, color=color_cria, is_baby=True)
+        if is_champion:
+            # Cría de emergencia: mucho más fuerte
+            vida_cria = 200
+            # Color más brillante y saturado
+            r = min(255, self.color[0] + 80)
+            g = min(255, self.color[1] + 80)
+            b = min(255, self.color[2] + 80)
+            color_cria = (r, g, b)
+            self.vida -= self.vida_max * 0.5 # Cuesta más energía
+            cria = Herbivoro(x, y, vida_cria, color=color_cria, is_baby=True)
+            cria.is_champion = True
+            cria.atacar = True # Champion Herbivore can attack
+            cria.attack_power = 25 # Attack power similar to a normal Carnivore
+            cria.detection_radius = 150 # Can detect enemies
+            cria.chase_radius = 250 # Can chase enemies
+            cria.attack_cooldown = 2.0 # Attack cooldown
+            cria.last_attack = 0.0 # Initialize last attack time
+            cria.hunt_state = 'wandering' # New state for champion herbivore
+            cria.target = None # New target for champion herbivore
+            cria.salto *= 1.1 # Slightly faster
+            cria.max_size *= 1.1 # Slightly larger
+        else:
+            # Cría normal
+            vida_cria = self.vida_max // 2
+            # Generar una tonalidad de color ligeramente diferente
+            r = max(0, min(255, self.color[0] + random.randint(-30, 30)))
+            g = max(0, min(255, self.color[1] + random.randint(-20, 20)))
+            b = max(0, min(255, self.color[2] + random.randint(-30, 30)))
+            color_cria = (r, g, b)
+            # Los padres pierden algo de vida al reproducirse
+            self.vida -= self.vida_max * 0.25 # Normal energy cost
+            cria = Herbivoro(x, y, vida_cria, color=color_cria, is_baby=True)
 
-    def mover(self, screen_width, screen_height, all_species={}):
+        return cria
+
+    def mover(self, screen_width, screen_height, all_species={}): # Changed posibles_presas to all_species for consistency
         """El herbívoro deambula y huye, pero también busca pareja activamente."""
         # La lógica de huida de la clase base tiene prioridad
         if self.escape_state == 'escaping':
@@ -371,6 +428,71 @@ class Herbivoro(Especies):
             if self.escape_state == 'escaping': # Comprobar si sigue huyendo
                 self.mating_mode = False # Si huye, no se aparea
                 return
+
+        # --- LÓGICA DE BÚSQUEDA DE CURACIÓN (ALTA PRIORIDAD) ---
+        if self.vida < self.vida_max * 0.35:
+            planta_curativa = self.buscar_planta_cercana(all_species)
+            if planta_curativa:
+                # Anular apareamiento y moverse a la planta
+                self.mating_mode = False
+                self.mover_hacia(planta_curativa.posicion_x, planta_curativa.posicion_y)
+                return None # Prioridad es curarse
+
+        # --- LÓGICA DE APAREAMIENTO DE EMERGENCIA (PRIORIDAD ALTA) ---
+        if self.emergency_mating_mode:
+            if self.emergency_partner and self.emergency_partner.vida > 0:
+                self.mover_hacia(self.emergency_partner.posicion_x, self.emergency_partner.posicion_y)
+                return # Prioridad es encontrar a la pareja designada
+
+
+        # --- LÓGICA DE ATAQUE DE CAMPEÓN HERBÍVORO (PRIORIZA CARNÍVOROS) ---
+        # Solo si es un campeón y puede atacar
+        if self.is_champion and self.atacar:
+            ahora = time.time()
+            if getattr(self, 'hunt_state', 'wandering') == 'wandering':
+                # Buscar Carnívoro más cercano
+                carnivoro_cercano = None
+                distancia_minima = getattr(self, 'detection_radius', 150) # Use attribute if exists, else default
+                for entidad in all_species.values():
+                    if isinstance(entidad, Carnivoro):
+                        dist = math.hypot(self.posicion_x - entidad.posicion_x, self.posicion_y - entidad.posicion_y)
+                        if dist < distancia_minima:
+                            distancia_minima = dist
+                            carnivoro_cercano = entidad
+                if carnivoro_cercano:
+                    self.target = carnivoro_cercano
+                    self.hunt_state = 'chasing'
+            
+            if getattr(self, 'hunt_state', 'wandering') == 'chasing' and self.target:
+                # Asegurarse de que el objetivo sigue siendo un carnívoro y está vivo
+                if not isinstance(self.target, Carnivoro) or getattr(self.target, 'vida', 0) <= 0:
+                    self.hunt_state = 'wandering'
+                    self.target = None
+                else:
+                    distancia = math.hypot(self.posicion_x - self.target.posicion_x, self.posicion_y - self.target.posicion_y)
+                    chase_radius = getattr(self, 'chase_radius', 250)
+                    if distancia > chase_radius:
+                        # Perdió el objetivo, vuelve a deambular
+                        self.hunt_state = 'wandering'
+                        self.target = None
+                    else:
+                        # Moverse hacia el objetivo o atacar
+                        puede_atacar = (ahora - getattr(self, 'last_attack', 0.0)) >= getattr(self, 'attack_cooldown', 2.0)
+                        if distancia < 25 and puede_atacar:
+                            # Atacar al carnívoro
+                            self.target.vida = max(0, self.target.vida - self.attack_power)
+                            self.last_attack = ahora
+                            return {'damage': self.attack_power, 'target': self.target} # Devolver info de ataque
+                        else:
+                            # Perseguir
+                            velocidad = self.salto * (0.5 if 25 <= distancia < 75 else 1.0)
+                            self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=velocidad)
+                            return None # El campeón está ocupado atacando/persiguiendo
+            
+            # Si el campeón no está atacando/persiguiendo un carnívoro, puede deambular
+            if getattr(self, 'hunt_state', 'wandering') == 'wandering':
+                super().mover(screen_width, screen_height, all_species)
+                return None # El campeón ya ha gestionado su movimiento
 
         # --- Lógica de Apareamiento ---
         if self.puede_reproducirse() and random.random() < 0.005: # Probabilidad de entrar en modo apareamiento
@@ -388,7 +510,7 @@ class Herbivoro(Especies):
                 self.mating_mode = False # No encontró pareja
 
         # Si no está huyendo ni buscando pareja, deambula
-        super().mover(screen_width, screen_height, all_species)
+        return super().mover(screen_width, screen_height, all_species) # This will be called if champion logic didn't return
 
     def buscar_pareja(self, all_species):
         """Busca otra instancia de Herbivoro para reproducirse."""
@@ -403,16 +525,34 @@ class Herbivoro(Especies):
                     mejor_pareja = otra_especie
         return mejor_pareja
 
+    def buscar_pareja_emergencia(self, all_species):
+        """Busca un Omnivoro para el cruce de emergencia."""
+        mejor_pareja = None
+        distancia_min = float('inf')
+        for entidad in all_species.values():
+            # Un Herbívoro busca un Omnívoro
+            if isinstance(entidad, Omnivoro) and entidad.puede_reproducirse():
+                dist = math.hypot(self.posicion_x - entidad.posicion_x, self.posicion_y - entidad.posicion_y)
+                if dist < distancia_min:
+                    distancia_min = dist
+                    mejor_pareja = entidad
+        return mejor_pareja
+
+
 class Omnivoro(Especies):
-    def __init__(self, x, y, vida, reproducirse=True, salto=3, color=None, is_baby=False):
+    def __init__(self, x, y, vida, reproducirse=True, salto=3, color=None, is_baby=False, is_champion=False):
         # Los omnívoros tienen un tiempo de vida de 2 minutos (120s)
         # El tamaño se usa como radio, así que un omnívoro de 20x20 tiene un "radio" de 10
-        super().__init__(x, y, vida, reproducirse, salto=salto, atacar=True, correr=True, comer=True, tiempo_vida_max=120, color=color or (128, 0, 128), size=5 if is_baby else 10, is_baby=is_baby)
-        self.max_size = 10 # Tamaño adulto (radio)
+        super().__init__(x, y, vida, reproducirse, salto=salto, atacar=True, correr=True, comer=True, tiempo_vida_max=120, color=color or (128, 0, 128), size=5 if is_baby else 10, is_baby=is_baby, is_champion=is_champion)
+        self.max_size = 10  # Tamaño adulto (radio)
         self.presa = None
         self.modo_caza = False # Alterna entre cazar y deambular
         self.food_target = None # Para buscar cadáveres
+        self.detection_radius = 150 # Default detection radius for omnivores
+        self.chase_radius = 250 # Default chase radius for omnivores
+        self.attack_power = 15 # Poder de ataque normal
 
+        
     def mover(self, screen_width, screen_height, posibles_presas={}):
         """
         Comportamiento mixto: a veces caza, a veces deambula tranquilamente.
@@ -423,6 +563,25 @@ class Omnivoro(Especies):
             if self.escape_state == 'escaping': # Comprobar si sigue huyendo
                 self.mating_mode = False # Si huye, no se aparea
                 return
+
+        if self.vida < self.vida_max * 0.35: # LÓGICA DE BÚSQUEDA DE CURACIÓN (ALTA PRIORIDAD)
+            planta_curativa = self.buscar_cadaver_cercano(posibles_presas) # Reutilizamos la función, pero debería ser buscar_planta_cercana
+            planta_curativa = self.buscar_planta_cercana(posibles_presas)
+            if planta_curativa:
+                # Anular otras acciones y moverse hacia la planta
+                self.mating_mode = False
+                self.modo_caza = False
+                self.food_target = None
+                self.presa = None
+                self.mover_hacia(planta_curativa.posicion_x, planta_curativa.posicion_y)
+                return None # Prioridad es curarse
+
+        # --- LÓGICA DE APAREAMIENTO DE EMERGENCIA (PRIORIDAD ALTA) ---
+        if self.emergency_mating_mode:
+            if self.emergency_partner and self.emergency_partner.vida > 0:
+                self.mover_hacia(self.emergency_partner.posicion_x, self.emergency_partner.posicion_y)
+                return # Prioridad es encontrar a la pareja designada
+
 
         # --- Lógica de Apareamiento (si no está cazando ni huyendo) ---
         if not self.modo_caza and self.puede_reproducirse() and random.random() < 0.005:
@@ -448,7 +607,7 @@ class Omnivoro(Especies):
                 self.presa = None # Olvida la presa al cambiar de modo
 
         if self.modo_caza:
-            # --- LÓGICA DE COMER CADÁVERES ---
+            # --- LÓGICA DE COMER CADÁVERES (PRIORIDAD EN MODO CAZA) ---
             if self.food_target is None or self.food_target.nutricion <= 0:
                 self.food_target = self.buscar_cadaver_cercano(posibles_presas)
             
@@ -467,9 +626,48 @@ class Omnivoro(Especies):
                     self.mover_hacia(self.food_target.posicion_x, self.food_target.posicion_y)
                     return None
             else:
-                # Si no hay cadáveres, busca presas vivas
+                # Si no hay cadáveres, busca presas vivas (o carnívoros si es campeón)
                 self.food_target = None
 
+            # --- LÓGICA DE CAZA DE CAMPEÓN OMNÍVORO (PRIORIZA CARNÍVOROS) ---
+            if self.is_champion:
+                # Si no tiene presa o la presa no es un carnívoro o está muerta
+                if self.presa is None or not isinstance(self.presa, Carnivoro) or getattr(self.presa, 'vida', 0) <= 0:
+                    # Buscar Carnívoro más cercano
+                    carnivoro_cercano = None
+                    distancia_minima = getattr(self, 'detection_radius', 200) # Usar detection_radius del campeón
+                    for entidad in posibles_presas.values(): # all_species es el parámetro correcto
+                        if isinstance(entidad, Carnivoro):
+                            dist = math.hypot(self.posicion_x - entidad.posicion_x, self.posicion_y - entidad.posicion_y)
+                            if dist < distancia_minima:
+                                distancia_minima = dist
+                                carnivoro_cercano = entidad
+                    self.presa = carnivoro_cercano
+                
+                if self.presa: # Si un carnívoro es el objetivo
+                    distancia = math.hypot(self.posicion_x - self.presa.posicion_x, self.posicion_y - self.presa.posicion_y)
+                    chase_radius = getattr(self, 'chase_radius', 300) # Usar chase_radius del campeón
+                    if distancia > chase_radius:
+                        # Perdió el objetivo, vuelve a deambular
+                        self.presa = None
+                    else:
+                        # Moverse hacia el objetivo o atacar
+                        puede_atacar = (ahora - getattr(self, 'last_attack', 0.0)) >= getattr(self, 'attack_cooldown', 1.5) # Omnivores have their own cooldown
+                        if distancia < 25 and puede_atacar:
+                            # Atacar al carnívoro
+                            self.presa.vida = max(0, self.presa.vida - self.attack_power)
+                            self.last_attack = ahora
+                            return {'damage': self.attack_power, 'target': self.presa} # Devolver info de ataque
+                        else:
+                            # Perseguir
+                            velocidad = self.salto * (0.5 if 25 <= distancia < 75 else 1.0)
+                            self.mover_hacia(self.presa.posicion_x, self.presa.posicion_y, velocidad=velocidad)
+                            return None # El campeón está ocupado atacando/persiguiendo
+            
+            # --- LÓGICA DE CAZA NORMAL (SI NO ES CAMPEÓN O NO ENCONTRÓ CARNÍVORO) ---
+            # Si no es campeón o el campeón no encontró un carnívoro, busca otras presas
+            if self.presa and (self.presa not in posibles_presas.values() or self.presa.vida <= 0): # all_species
+                self.presa = None
 
             # Comportamiento de caza (similar al carnívoro pero menos agresivo)
             if self.presa and (self.presa not in posibles_presas.values() or self.presa.vida <= 0):
@@ -477,7 +675,7 @@ class Omnivoro(Especies):
 
             if not self.presa:
                 presa_mas_cercana = None
-                distancia_minima = 100  # Radio de detección más pequeño
+                distancia_minima = getattr(self, 'detection_radius', 100) # Usar detection_radius del omnívoro
                 for especie in posibles_presas.values():
                     if especie is self or isinstance(especie, (Carnivoro, Omnivoro, Planta, Cadaver)):
                         continue
@@ -488,35 +686,56 @@ class Omnivoro(Especies):
                 self.presa = presa_mas_cercana
 
             if self.presa:
-                velocidad_caza = 1.5
+                velocidad_caza = self.salto * 0.8 # Omnivores are not as fast as carnivores
                 dx = self.presa.posicion_x - self.posicion_x
                 dy = self.presa.posicion_y - self.posicion_y
                 dist = math.sqrt(dx**2 + dy**2)
                 if dist > 0:
                     self.posicion_x += (dx / dist) * velocidad_caza
                     self.posicion_y += (dy / dist) * velocidad_caza
+                    # Check for attack range and cooldown
+                    if dist < 25 and (ahora - getattr(self, 'last_attack', 0.0)) >= getattr(self, 'attack_cooldown', 1.5):
+                        self.presa.vida = max(0, self.presa.vida - self.attack_power)
+                        self.last_attack = ahora
+                        return {'damage': self.attack_power, 'target': self.presa}
             else: # Si no encuentra presa en modo caza, deambula
                 super().mover(screen_width, screen_height, posibles_presas)
-        else:
-            # Comportamiento de recolección (similar al herbívoro)
-            super().mover(screen_width, screen_height, posibles_presas)
+        else: # Si no está en modo caza, deambula
+            return super().mover(screen_width, screen_height, posibles_presas) # all_species
 
     def puede_reproducirse(self):
         """Los omnívoros pueden reproducirse si tienen suficiente vida."""
         return self.reproducirse and self.vida >= self.vida_max * 0.7
 
-    def reproducir(self, x, y):
+    def reproducir(self, x, y, is_champion=False):
         """Crea una nueva cría de Omnívoro."""
-        # La cría nace con la mitad de la vida máxima de sus padres.
-        vida_cria = self.vida_max // 2
-        # Generar una tonalidad de color ligeramente diferente
-        r = max(0, min(255, self.color[0] + random.randint(-30, 30)))
-        g = max(0, min(255, self.color[1] + random.randint(-30, 30)))
-        b = max(0, min(255, self.color[2] + random.randint(-20, 20)))
-        color_cria = (r, g, b)
-        # Los padres pierden algo de vida al reproducirse
-        self.vida -= self.vida_max * 0.25
-        return Omnivoro(x, y, vida_cria, color=color_cria, is_baby=True)
+        if is_champion:
+            # Cría de emergencia: más fuerte que un carnívoro
+            vida_cria = 250
+            # Color más brillante y saturado
+            r = min(255, self.color[0] + 80)
+            g = min(255, self.color[1] + 80)
+            b = min(255, self.color[2] + 80)
+            color_cria = (r, g, b)
+            color_cria = (255, 255, 0) # Híbrido siempre es amarillo brillante
+            self.vida -= self.vida_max * 0.5 # Cuesta más energía
+            cria = Omnivoro(x, y, vida_cria, color=color_cria, is_baby=True, is_champion=True)
+            cria.attack_power = 45 # Poder de ataque de campeón aumentado
+            cria.attack_cooldown = 1.5 # Cooldown de ataque
+            cria.last_attack = 0.0 # Inicializar
+            cria.detection_radius = 250 # Mayor radio de detección
+            cria.salto *= 1.2 # Más rápido
+            cria.max_size *= 1.25 # Más grande
+            return cria
+        else:
+            vida_cria = self.vida_max // 2
+            r = max(0, min(255, self.color[0] + random.randint(-30, 30)))
+            g = max(0, min(255, self.color[1] + random.randint(-30, 30)))
+            b = max(0, min(255, self.color[2] + random.randint(-20, 20)))
+            color_cria = (r, g, b)
+            self.vida -= self.vida_max * 0.25 # Normal energy cost
+            cria = Omnivoro(x, y, vida_cria, color=color_cria, is_baby=True)
+            return cria
 
     def buscar_pareja(self, all_species):
         """Busca otra instancia de Omnivoro para reproducirse."""
@@ -532,6 +751,20 @@ class Omnivoro(Especies):
                     distancia_min = dist
                     mejor_pareja = otra_especie
         return mejor_pareja
+
+    def buscar_pareja_emergencia(self, all_species):
+        """Busca un Herbivoro para el cruce de emergencia."""
+        mejor_pareja = None
+        distancia_min = float('inf')
+        for entidad in all_species.values():
+            # Un Omnívoro busca un Herbívoro
+            if isinstance(entidad, Herbivoro) and entidad.puede_reproducirse():
+                dist = math.hypot(self.posicion_x - entidad.posicion_x, self.posicion_y - entidad.posicion_y)
+                if dist < distancia_min:
+                    distancia_min = dist
+                    mejor_pareja = entidad
+        return mejor_pareja
+
 
     def buscar_cadaver_cercano(self, all_species):
         """Busca el cadáver más cercano."""
@@ -568,8 +801,8 @@ class Planta(Especies):
         self.healing_target = None
         self.time_on_plant = 0
         self.is_healing = False
-        self.heal_amount = 5  # Puntos de vida por segundo
-        self.heal_cooldown = 1.0 # Cura cada segundo
+        self.heal_amount = 15  # Puntos de vida por tick
+        self.heal_cooldown = 0.5 # Cura cada medio segundo
         self.last_heal_time = 0
 
     # El método mover de la clase base (deambular) no se aplica a las plantas estáticas.
@@ -737,7 +970,7 @@ class VistaPygame:
 
         # Añadir plantas en posiciones aleatorias, asegurando que no estén demasiado juntas
 
-        self.personaje = Personaje(200, 200, 100)
+        self.personaje = Personaje(200, 200, 1000) # Vida del jugador aumentada x10
         # Popups de daño: lista de dict {text,x,y,start_ms}
         self.damage_popups = []
 
@@ -872,13 +1105,16 @@ class VistaPygame:
                 # 1. No ser la misma instancia.
                 # 2. Ser de la misma clase (Carnivoro con Carnivoro, etc.).
                 # 3. Ambos deben tener suficiente vida para reproducirse.
-                if (especie is not otra_especie and 
-                    isinstance(otra_especie, type(especie)) and
+                if (especie is not otra_especie and
+                    (isinstance(otra_especie, type(especie)) or especie.emergency_mating_mode or otra_especie.emergency_mating_mode) and # Permite cruce
                     hasattr(especie, 'puede_reproducirse') and especie.puede_reproducirse() and 
                     hasattr(otra_especie, 'puede_reproducirse') and otra_especie.puede_reproducirse()):
                     
                     # Verificar que no se exceda el límite de población para este tipo de especie
                     # Solo puede haber una cría a la vez por tipo de especie.
+                    # Para el híbrido, solo puede haber uno en total.
+                    hay_campeon_existente = any(e.is_champion for e in self.especies_vivas.values())
+
                     # Si ya hay una cría de este tipo, no se puede crear otra.
                     hay_cria_existente = any(
                         isinstance(e, type(especie)) and getattr(e, 'is_baby', False) for e in self.especies_vivas.values())
@@ -899,13 +1135,24 @@ class VistaPygame:
                         new_x = max(0, min(new_x, self.ancho))
                         new_y = max(0, min(new_y, self.alto))
                         
-                        nueva_especie = especie.reproducir(new_x, new_y)
+                        # Lógica de reproducción
+                        if especie.emergency_mating_mode or otra_especie.emergency_mating_mode:
+                            if hay_campeon_existente: continue # Solo un campeón a la vez
+                            # Siempre es el Omnívoro el que "da a luz" al híbrido campeón
+                            if isinstance(especie, Omnivoro):
+                                nueva_especie = especie.reproducir(new_x, new_y, is_champion=True)
+                            else: # Si la especie es Herbivoro, la otra es Omnivoro
+                                nueva_especie = otra_especie.reproducir(new_x, new_y, is_champion=True)
+                        else: # Reproducción normal
+                            if hay_cria_existente: continue
+                            nueva_especie = especie.reproducir(new_x, new_y)
+
                         if nueva_especie:
                             # Actualizar el tiempo del último intento de reproducción
                             especie.ultimo_intento_reproduccion = tiempo_actual
                             otra_especie.ultimo_intento_reproduccion = tiempo_actual
                             
-                            # --- SEPARACIÓN POST-REPRODUCCIÓN ---
+                            # --- SEPARACIÓN POST-REPRODUCCIÓN --- (Se aplica a ambos casos)
                             # Empujar a los padres en direcciones opuestas para que no se queden atascados.
                             # Y también a la cría para que no aparezca encima de ellos.
                             push_force_parents = 30
@@ -931,6 +1178,8 @@ class VistaPygame:
                             # Salir del modo de apareamiento
                             especie.mating_mode = False
                             otra_especie.mating_mode = False
+                            especie.emergency_mating_mode = False
+                            otra_especie.emergency_mating_mode = False
                             # Generar un nuevo nombre único para la especie
                             base_name = especie.__class__.__name__.lower()
                             new_name = f"{base_name}_{len(self.especies_vivas) + len(nuevas_especies)}"
@@ -947,6 +1196,55 @@ class VistaPygame:
                             break
         # Añadir las nuevas especies a la lista principal
         self.especies_vivas.update(nuevas_especies)
+
+    def _check_emergency_reproduction(self):
+        """
+        Activa el modo de apareamiento de emergencia si solo queda un herbívoro o un omnívoro,
+        para que busquen cruzarse.
+        """
+        # Primero, resetear todos los flags de emergencia para re-evaluar la situación
+        for e in self.especies_vivas.values():
+            e.emergency_mating_mode = False
+            e.emergency_partner = None
+
+        # Contar cuántos individuos de cada tipo hay
+        herbivoros_vivos = [e for e in self.especies_vivas.values() if isinstance(e, Herbivoro) and not e.is_baby]
+        omnivoros_vivos = [e for e in self.especies_vivas.values() if isinstance(e, Omnivoro) and not e.is_baby]
+
+        # Caso 1: Solo queda un herbívoro y hay omnívoros para cruzar
+        if len(herbivoros_vivos) == 1 and len(omnivoros_vivos) > 0:
+            survivor = herbivoros_vivos[0]
+            if survivor.puede_reproducirse():
+                # Encontrar al omnívoro más cercano como pareja forzada
+                best_partner = min(omnivoros_vivos, 
+                                   key=lambda p: math.hypot(survivor.posicion_x - p.posicion_x, survivor.posicion_y - p.posicion_y) 
+                                   if p.puede_reproducirse() else float('inf'))
+                
+                if best_partner and best_partner.puede_reproducirse():
+                    survivor.emergency_mating_mode = True
+                    best_partner.emergency_mating_mode = True
+                    survivor.emergency_partner = best_partner
+                    best_partner.emergency_partner = survivor
+        
+        # Caso 2: Solo queda un omnívoro y hay herbívoros para cruzar
+        elif len(omnivoros_vivos) == 1 and len(herbivoros_vivos) > 0:
+            survivor = omnivoros_vivos[0]
+            if survivor.puede_reproducirse():
+                # Encontrar al herbívoro más cercano como pareja forzada
+                best_partner = min(herbivoros_vivos, 
+                                   key=lambda p: math.hypot(survivor.posicion_x - p.posicion_x, survivor.posicion_y - p.posicion_y)
+                                   if p.puede_reproducirse() else float('inf'))
+
+                if best_partner and best_partner.puede_reproducirse():
+                    survivor.emergency_mating_mode = True
+                    best_partner.emergency_mating_mode = True
+                    survivor.emergency_partner = best_partner
+                    best_partner.emergency_partner = survivor
+        
+        # No es necesario un 'else' porque el reseteo se hace al principio de la función,
+        # asegurando que el modo de emergencia solo esté activo si se cumplen las condiciones
+        # en este mismo fotograma.
+
 
     def _resolve_collisions(self):
         """Resuelve las colisiones entre entidades de la misma especie para que no se superpongan."""
@@ -1007,28 +1305,19 @@ class VistaPygame:
                     break
             
             if current_target:
-                if plant.healing_target is current_target:
-                    # La misma entidad sigue en la planta, acumular tiempo
-                    plant.time_on_plant += self.clock.get_time() / 1000.0
-                else:
-                    # Nueva entidad en la planta, reiniciar temporizador
-                    plant.healing_target = current_target
-                    plant.time_on_plant = 0
-                    plant.is_healing = False
-
-                # Si ha estado 2 segundos, empezar a curar
-                if plant.time_on_plant >= 2 and not plant.is_healing:
-                    plant.is_healing = True
-                    plant.last_heal_time = ahora # Iniciar curación inmediatamente
-
-                if plant.is_healing and ahora - plant.last_heal_time >= plant.heal_cooldown:
+                # La curación es ahora instantánea al contacto, sin el retardo de 2 segundos.
+                plant.is_healing = True
+                plant.healing_target = current_target
+                
+                # Aplicar curación si el cooldown ha pasado
+                if ahora - plant.last_heal_time >= plant.heal_cooldown:
                     plant.last_heal_time = ahora
                     target = plant.healing_target
-                    target.vida = min(target.vida_max, target.vida + plant.heal_amount)
+                    if target.vida < target.vida_max:
+                        target.vida = min(target.vida_max, target.vida + plant.heal_amount)
             else:
                 # Nadie en la planta, resetear estado
                 plant.healing_target = None
-                plant.time_on_plant = 0
                 plant.is_healing = False
 
     def _update_growth(self):
@@ -1065,7 +1354,7 @@ class VistaPygame:
             # El método mover puede devolver información sobre el ataque
             attack_info = especie.mover(self.ancho, self.alto, all_entities)
 
-            if attack_info and isinstance(especie, Carnivoro):
+            if attack_info:
                 # El carnívoro atacó, procesamos el resultado
                 target = attack_info['target']
                 damage = attack_info['damage']
@@ -1306,11 +1595,11 @@ class VistaPygame:
             # IA: actualizar comportamiento de las especies (carnívoro persigue/ataca)
             self._update_ai()
 
-            # Resolver colisiones entre especies
-            self._resolve_collisions()
-
             # Verificar si alguna especie puede reproducirse
             self.check_reproduction()
+
+            # Verificar si alguna especie necesita reproducción de emergencia
+            self._check_emergency_reproduction()
 
             # Actualizar lógica de curación de las plantas
             self._update_plant_healing()

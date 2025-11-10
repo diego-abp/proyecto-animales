@@ -45,6 +45,19 @@ class Especies:
         self.is_paused = False
         self.pause_end_time = 0
 
+    def update_vida_por_tiempo(self):
+        """
+        Reduce la vida de la especie con el tiempo, simulando el envejecimiento.
+        No se aplica a plantas o entidades con vida infinita.
+        """
+        if self.vida == float('inf') or self.tiempo_vida_max <= 0:
+            return
+
+        ahora = time.time()
+        tiempo_transcurrido = ahora - self.ultimo_update
+        self.ultimo_update = ahora
+        self.vida -= (self.vida_max / self.tiempo_vida_max) * tiempo_transcurrido
+
     def take_damage(self, attacker, damage):
         """Aplica daño a la especie y activa un contraataque/huida."""
         self.vida -= damage
@@ -149,8 +162,8 @@ class Especies:
 
 class Carnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=2, color=None, is_baby=False):
-        # Los carnívoros tienen tiempo de vida medio (150). Se mueven más rápido para cazar.
-        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=150, color=color or (255, 0, 0), size=7 if is_baby else 15, is_baby=is_baby)
+        # Los carnívoros tienen un tiempo de vida de 2 minutos (120s). Se mueven más rápido para cazar.
+        super().__init__(x, y, vida, reproducirse, salto, True, True, True, tiempo_vida_max=120, color=color or (255, 0, 0), size=7 if is_baby else 15, is_baby=is_baby)
         # Atributos de ataque
         self.attack_power = 25
         self.attack_cooldown = 2.0
@@ -166,6 +179,7 @@ class Carnivoro(Especies):
         self.target = None
         self.detection_radius = 150  # Radio para empezar a cazar
         self.chase_radius = 250      # Radio para dejar de cazar si la presa escapa
+        self.food_target = None # Para buscar cadáveres
         self.provoked_by_player = False # Se vuelve True si el jugador le ataca
 
     def mover(self, screen_width, screen_height, all_species):
@@ -210,21 +224,50 @@ class Carnivoro(Especies):
                 self.hunt_state = 'chasing'
                 return None
 
-            # Buscar presas prioritarias: herbívoros, luego omnívoros
-            posibles = []
-            if 'herbivoro' in all_species:
-                posibles.append(all_species['herbivoro'])
-            if 'omnivoro' in all_species:
-                posibles.append(all_species['omnivoro'])
+            # --- LÓGICA DE COMER CADÁVERES (PRIORIDAD SI LA VIDA ES BAJA) ---
+            # Si tiene poca vida, buscará comida fácil (cadáveres) antes que cazar.
+            if self.vida < self.vida_max * 0.7:
+                if self.food_target is None or self.food_target.nutricion <= 0:
+                    self.food_target = self.buscar_cadaver_cercano(all_species)
 
-            for prey in posibles:
-                dist = math.hypot(self.posicion_x - prey.posicion_x, self.posicion_y - prey.posicion_y)
-                if dist < self.detection_radius:
-                    self.target = prey
-                    self.hunt_state = 'chasing'
-                    return None # Salir del método mover para procesar la caza en el siguiente frame
-            # Si no se encontró presa, deambular
-            super().mover(screen_width, screen_height, all_species)
+                if self.food_target:
+                    dist_comida = math.hypot(self.posicion_x - self.food_target.posicion_x, self.posicion_y - self.food_target.posicion_y)
+                    if dist_comida < self.food_target.size + 5: # Si está suficientemente cerca para comer
+                        # Comer el cadáver
+                        self.vida = min(self.vida_max, self.vida + 25) # Recupera 25 de vida
+                        self.food_target.nutricion -= 25
+                        self.last_attack = ahora # Reutilizar cooldown de ataque como cooldown de comer
+                        if self.food_target.nutricion <= 0:
+                            self.food_target = None # Se lo ha comido todo
+                        return None
+                    else:
+                        # Moverse hacia el cadáver
+                        self.mover_hacia(self.food_target.posicion_x, self.food_target.posicion_y)
+                        return None
+            else:
+                # Si tiene mucha vida, olvida el cadáver y se centra en cazar
+                self.food_target = None
+
+
+            # Búsqueda constante de presas: cualquier entidad que no sea un Carnívoro o una Planta.
+            presa_mas_cercana = None
+            distancia_minima = self.detection_radius
+
+            for entidad in all_species.values():
+                # No puede cazarse a sí mismo, a otros carnívoros o a plantas.
+                if entidad is self or isinstance(entidad, (Carnivoro, Planta)):
+                    continue
+                dist = math.hypot(self.posicion_x - entidad.posicion_x, self.posicion_y - entidad.posicion_y)
+                if dist < distancia_minima:
+                    distancia_minima = dist
+                    presa_mas_cercana = entidad
+            
+            if presa_mas_cercana:
+                self.target = presa_mas_cercana
+                self.hunt_state = 'chasing'
+            else:
+                # Si no se encontró presa, deambular
+                super().mover(screen_width, screen_height, all_species)
             return None
 
         if self.hunt_state == 'chasing':
@@ -251,6 +294,19 @@ class Carnivoro(Especies):
                 velocidad = self.salto * (0.5 if 25 <= distancia < 75 else 1.0)
                 self.mover_hacia(self.target.posicion_x, self.target.posicion_y, velocidad=velocidad)
                 return None
+
+    def buscar_cadaver_cercano(self, all_species):
+        """Busca el cadáver más cercano."""
+        cadaver_cercano = None
+        distancia_min = self.detection_radius # Usa el mismo radio de detección
+        for entidad in all_species.values():
+            if isinstance(entidad, Cadaver):
+                dist = math.hypot(self.posicion_x - entidad.posicion_x, self.posicion_y - entidad.posicion_y)
+                if dist < distancia_min:
+                    distancia_min = dist
+                    cadaver_cercano = entidad
+        return cadaver_cercano
+
 
     def puede_reproducirse(self):
         """Los carnívoros pueden reproducirse si tienen suficiente vida."""
@@ -287,8 +343,8 @@ class Carnivoro(Especies):
 
 class Herbivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=4, color=None, is_baby=False):
-        # Los herbívoros tienen tiempo de vida largo (120)
-        super().__init__(x, y, vida, reproducirse, salto, False, True, True, color=color or (0, 200, 0), size=7 if is_baby else 15, is_baby=is_baby)
+        # Los herbívoros tienen un tiempo de vida de 2 minutos (120s)
+        super().__init__(x, y, vida, reproducirse, salto, False, True, True, tiempo_vida_max=120, color=color or (0, 200, 0), size=7 if is_baby else 15, is_baby=is_baby)
 
     def puede_reproducirse(self):
         """Los herbívoros pueden reproducirse si tienen suficiente vida."""
@@ -349,12 +405,13 @@ class Herbivoro(Especies):
 
 class Omnivoro(Especies):
     def __init__(self, x, y, vida, reproducirse=True, salto=3, color=None, is_baby=False):
-        # Los omnívoros tienen tiempo de vida equilibrado (100)
+        # Los omnívoros tienen un tiempo de vida de 2 minutos (120s)
         # El tamaño se usa como radio, así que un omnívoro de 20x20 tiene un "radio" de 10
-        super().__init__(x, y, vida, reproducirse, salto=salto, atacar=True, correr=True, comer=True, color=color or (128, 0, 128), size=5 if is_baby else 10, is_baby=is_baby)
+        super().__init__(x, y, vida, reproducirse, salto=salto, atacar=True, correr=True, comer=True, tiempo_vida_max=120, color=color or (128, 0, 128), size=5 if is_baby else 10, is_baby=is_baby)
         self.max_size = 10 # Tamaño adulto (radio)
         self.presa = None
         self.modo_caza = False # Alterna entre cazar y deambular
+        self.food_target = None # Para buscar cadáveres
 
     def mover(self, screen_width, screen_height, posibles_presas={}):
         """
@@ -391,6 +448,29 @@ class Omnivoro(Especies):
                 self.presa = None # Olvida la presa al cambiar de modo
 
         if self.modo_caza:
+            # --- LÓGICA DE COMER CADÁVERES ---
+            if self.food_target is None or self.food_target.nutricion <= 0:
+                self.food_target = self.buscar_cadaver_cercano(posibles_presas)
+            
+            if self.food_target:
+                dist_comida = math.hypot(self.posicion_x - self.food_target.posicion_x, self.posicion_y - self.food_target.posicion_y)
+                if dist_comida < self.food_target.size + 5:
+                    # Comer
+                    self.vida = min(self.vida_max, self.vida + 20)
+                    self.food_target.nutricion -= 20
+                    self.last_random_move_time = time.time() # Cooldown para no comer instantáneamente
+                    if self.food_target.nutricion <= 0:
+                        self.food_target = None
+                    return None
+                else:
+                    # Moverse hacia el cadáver
+                    self.mover_hacia(self.food_target.posicion_x, self.food_target.posicion_y)
+                    return None
+            else:
+                # Si no hay cadáveres, busca presas vivas
+                self.food_target = None
+
+
             # Comportamiento de caza (similar al carnívoro pero menos agresivo)
             if self.presa and (self.presa not in posibles_presas.values() or self.presa.vida <= 0):
                 self.presa = None
@@ -399,7 +479,7 @@ class Omnivoro(Especies):
                 presa_mas_cercana = None
                 distancia_minima = 100  # Radio de detección más pequeño
                 for especie in posibles_presas.values():
-                    if especie is self or isinstance(especie, (Carnivoro, Omnivoro)):
+                    if especie is self or isinstance(especie, (Carnivoro, Omnivoro, Planta, Cadaver)):
                         continue
                     dist = math.sqrt((self.posicion_x - especie.posicion_x)**2 + (self.posicion_y - especie.posicion_y)**2)
                     if dist < distancia_minima:
@@ -452,6 +532,32 @@ class Omnivoro(Especies):
                     distancia_min = dist
                     mejor_pareja = otra_especie
         return mejor_pareja
+
+    def buscar_cadaver_cercano(self, all_species):
+        """Busca el cadáver más cercano."""
+        cadaver_cercano = None
+        distancia_min = 150 # Radio de detección
+        for entidad in all_species.values():
+            if isinstance(entidad, Cadaver):
+                dist = math.hypot(self.posicion_x - entidad.posicion_x, self.posicion_y - entidad.posicion_y)
+                if dist < distancia_min:
+                    distancia_min = dist
+                    cadaver_cercano = entidad
+        return cadaver_cercano
+
+class Cadaver(Especies):
+    def __init__(self, x, y, original_size, original_color, original_shape='circle'):
+        # Los cadáveres no se mueven, no se reproducen, etc.
+        super().__init__(x, y, vida=0, reproducirse=False, salto=0)
+        self.nutricion = original_size * 5 # Valor nutricional basado en el tamaño
+        self.size = original_size
+        # Convertir el color original a escala de grises para la apariencia de cadáver
+        gris = int(sum(original_color) / 3 * 0.6) # Más oscuro
+        self.color = (gris, gris, gris)
+        self.original_shape = original_shape # 'circle' o 'rect'
+        self.tiempo_creacion = time.time()
+        self.tiempo_descomposicion_max = 45 # Segundos hasta que desaparece
+
 
 class Planta(Especies):
     def __init__(self, x, y, reproducirse=False):
@@ -941,6 +1047,11 @@ class VistaPygame:
                     especie.size = tamaño_inicial + (especie.max_size - tamaño_inicial) * progreso
     def _update_ai(self):
         """Actualiza el comportamiento de las especies controladas por IA."""
+        # Primero, actualizamos la vida por tiempo para todas las especies
+        self._update_vida_por_tiempo()
+
+        # Ahora, procedemos con la IA de movimiento y ataque
+
         # Crear un diccionario con todas las entidades "atacables" para la IA
         all_entities = self.especies_vivas.copy()
         all_entities['personaje'] = self.personaje
@@ -979,22 +1090,45 @@ class VistaPygame:
                                 del self.especies_vivas[key]
                                 break
 
+    def _update_vida_por_tiempo(self):
+        """Llama al método de actualización de vida por tiempo para cada especie."""
+        for especie in self.especies_vivas.values():
+            especie.update_vida_por_tiempo()
+
     def draw(self):
         # Fondo
         if self.background_image:
             self.screen.blit(self.background_image, (0, 0))
         else:
             self.screen.fill((130, 170, 110)) # Color de fondo alternativo si la imagen no carga
-        especies_muertas = []
+        
+        # --- GESTIÓN DE MUERTES Y CADÁVERES ---
+        nombres_muertos = []
+        nuevos_cadaveres = {}
         
         # Comprobar qué especies han muerto por daño y marcarlas para eliminar
         for nombre, especie in list(self.especies_vivas.items()):
-            if hasattr(especie, 'vida') and especie.vida <= 0:
-                especies_muertas.append(nombre)
+            # Los cadáveres se gestionan por su nutrición/tiempo
+            if isinstance(especie, Cadaver):
+                if especie.nutricion <= 0:
+                    nombres_muertos.append(nombre)
+                continue
+            
+            if hasattr(especie, 'vida') and especie.vida <= 0 and not isinstance(especie, Planta):
+                nombres_muertos.append(nombre)
+                # Crear un cadáver en su lugar si es un animal
+                if isinstance(especie, (Carnivoro, Herbivoro, Omnivoro)):
+                    forma = 'rect' if isinstance(especie, Omnivoro) else 'circle'
+                    cadaver = Cadaver(especie.posicion_x, especie.posicion_y, especie.size, especie.color, forma)
+                    nombre_cadaver = f"cadaver_{time.time()}"
+                    nuevos_cadaveres[nombre_cadaver] = cadaver
 
         # Eliminar especies muertas
-        for nombre in especies_muertas:
+        for nombre in nombres_muertos:
             del self.especies_vivas[nombre]
+        
+        # Añadir los nuevos cadáveres al diccionario principal de entidades
+        self.especies_vivas.update(nuevos_cadaveres)
 
         # Dibujar el sprite del personaje
         if self.animations:
@@ -1047,6 +1181,16 @@ class VistaPygame:
                 pygame.draw.rect(self.screen, (0,0,0), (omni_x - 1, omni_y - 1, omni_size + 2, omni_size + 2))
                 pygame.draw.rect(self.screen, especie.color, (omni_x, omni_y, omni_size, omni_size))
                 self._draw_hp_bar(especie)
+            elif isinstance(especie, Cadaver):
+                # Dibujar el cadáver según su forma original pero en gris
+                if especie.original_shape == 'circle':
+                    pygame.draw.circle(self.screen, (20,20,20), (int(especie.posicion_x), int(especie.posicion_y)), int(especie.size) + 1)
+                    pygame.draw.circle(self.screen, especie.color, (int(especie.posicion_x), int(especie.posicion_y)), int(especie.size))
+                else: # rect
+                    size = int(especie.size) * 2
+                    x, y = int(especie.posicion_x - size // 2), int(especie.posicion_y - size // 2)
+                    pygame.draw.rect(self.screen, (20,20,20), (x - 1, y - 1, size + 2, size + 2))
+                    pygame.draw.rect(self.screen, especie.color, (x, y, size, size))
             elif isinstance(especie, Planta):
                 # Dibujar la planta como un triángulo verde con un contorno negro
                 color_contorno = (50, 255, 50) if especie.is_healing else (0, 0, 0) # Verde lima brillante al curar
@@ -1091,6 +1235,14 @@ class VistaPygame:
         self.screen.blit(self.font.render(texto_str, True, color_texto), (pos_x, pos_y))
 
         pygame.display.flip()
+
+    def _update_cadaveres(self):
+        """Actualiza el estado de los cadáveres, como la descomposición."""
+        ahora = time.time()
+        for especie in self.especies_vivas.values():
+            if isinstance(especie, Cadaver):
+                if ahora - especie.tiempo_creacion > especie.tiempo_descomposicion_max:
+                    especie.nutricion = 0 # Marcar para eliminación por descomposición
 
     def iniciar(self):
         self.running = True
@@ -1166,6 +1318,9 @@ class VistaPygame:
             # Actualizar crecimiento de las crías
             self._update_growth()
 
+            # Actualizar estado de los cadáveres (descomposición)
+            self._update_cadaveres()
+
             # Dibujar
             self.draw()
 
@@ -1178,7 +1333,3 @@ if __name__ == "__main__":
     print("=== Juego en 2 capas Lógica y Vista ===")
     juego = VistaPygame()
     juego.iniciar()
-#hola 
-
-    
-        

@@ -226,8 +226,9 @@ class Carnivoro(Especies):
                 return None
 
             if self.vida < self.vida_max * 0.7:
-                if self.food_target is None or self.food_target.nutricion <= 0:
-                    self.food_target = self.buscar_cadaver_cercano(all_species)
+                if self.food_target is None or (hasattr(self.food_target, 'nutricion') and self.food_target.nutricion <= 0):
+                    # Cadáveres eliminados: no buscamos cadáveres, dejamos sin objetivo alimentario aquí
+                    self.food_target = None
 
                 if self.food_target:
                     dist_comida = math.hypot(self.posicion_x - self.food_target.posicion_x, self.posicion_y - self.food_target.posicion_y)
@@ -472,7 +473,7 @@ class Omnivoro(Especies):
                 return
 
         if self.vida < self.vida_max * 0.35:
-            planta_curativa = self.buscar_cadaver_cercano(posibles_presas)
+            # Antes buscábamos cadáveres; ahora sólo buscamos plantas curativas
             planta_curativa = self.buscar_planta_cercana(posibles_presas)
             if planta_curativa:
                 self.mating_mode = False
@@ -510,8 +511,9 @@ class Omnivoro(Especies):
                 self.presa = None
 
         if self.modo_caza:
-            if self.food_target is None or self.food_target.nutricion <= 0:
-                self.food_target = self.buscar_cadaver_cercano(posibles_presas)
+            if self.food_target is None or (hasattr(self.food_target, 'nutricion') and self.food_target.nutricion <= 0):
+                # No buscar cadáveres; no asignamos objetivo alimentario por cadáver
+                self.food_target = None
             
             if self.food_target:
                 dist_comida = math.hypot(self.posicion_x - self.food_target.posicion_x, self.posicion_y - self.food_target.posicion_y)

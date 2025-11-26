@@ -12,6 +12,10 @@ from logica.herbivoro import Herbivoro
 from logica.omnivoro import Omnivoro
 from logica.planta import Planta
 from vista.cli import InterfazCLI
+try:
+    from vista.gui import InterfazGrafica
+except Exception:
+    InterfazGrafica = None
 from persistencia.gestor_guardado import GestorGuardado
 
 import time, random, math
@@ -31,9 +35,20 @@ class ControladorSimulador:
             self.interfaz.mostrar_menu_principal()
             opcion = input("\nSeleccione opcion: ").strip()
             if opcion == '1':
-                modo_visual = input("Iniciar en modo visual/automatico? (s/N): ").strip().lower()
-                if modo_visual == 's': self._iniciar_simulacion_nueva(auto=True)
-                else: self._iniciar_simulacion_nueva()
+                # Ofrecer modos: 1=CLI interactivo, 2=Automático ASCII, 3=GUI (ventana)
+                modo = input("Modo de simulación: 1=CLI interactivo, 2=Automático ASCII, 3=GUI ventana [1]: ").strip() or '1'
+                if modo == '2':
+                    self._iniciar_simulacion_nueva(auto=True)
+                elif modo == '3':
+                    if InterfazGrafica is None:
+                        self.interfaz.mostrar_error("GUI no disponible en este entorno")
+                        input("Enter...")
+                    else:
+                        self._iniciar_simulacion_nueva(auto=False)
+                        # iniciar GUI y la simulación en background
+                        self._iniciar_gui_y_simulacion()
+                else:
+                    self._iniciar_simulacion_nueva()
             elif opcion == '2': self._guardar_partida_manual()
             elif opcion == '3': self._cargar_partida()
             elif opcion == '4': self._configurar_autoguardado()
@@ -104,6 +119,34 @@ class ControladorSimulador:
                 except (KeyboardInterrupt, Exception) as e:
                     self.en_simulacion = False
                     self.interfaz.mostrar_error(f"Error: {e}")
+
+    def _iniciar_gui_y_simulacion(self):
+        """Inicia la GUI (tkinter) en el hilo principal y la simulación en segundo plano."""
+        if not self.ecosistema:
+            self.interfaz.mostrar_error("No hay simulacion iniciada")
+            return
+        gui = InterfazGrafica()
+        # hilo que avanza la simulación continuamente
+        def sim_loop():
+            self.en_simulacion = True
+            try:
+                while self.en_simulacion:
+                    self._avanzar_ciclo()
+                    if self.ecosistema.necesita_autoguardado():
+                        meta = self._generar_metadatos()
+                        exitoso, msg = self.gestor_guardado.guardar('autoguardado', self.ecosistema, meta)
+                        if exitoso: self.interfaz.mostrar_autoguardado('autoguardado')
+                        self.ecosistema.reset_ciclos_autoguardado()
+                    time.sleep(0.5)
+            except Exception:
+                pass
+        t = __import__('threading').Thread(target=sim_loop, daemon=True)
+        t.start()
+        try:
+            gui.start(self.ecosistema, update_interval=0.5)
+        finally:
+            # cuando la GUI se cierre, detener la simulación
+            self.en_simulacion = False
 
     def _render_ascii(self, width: int = 80, height: int = 20):
         """Render ASCII simple del ecosistema en la consola.

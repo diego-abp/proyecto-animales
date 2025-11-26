@@ -16,6 +16,10 @@ try:
     from vista.gui import InterfazGrafica
 except Exception:
     InterfazGrafica = None
+try:
+    from vista.pygame_view import VistaPygame
+except Exception:
+    VistaPygame = None
 from persistencia.gestor_guardado import GestorGuardado
 
 import time, random, math
@@ -33,26 +37,24 @@ class ControladorSimulador:
         while True:
             self.interfaz.limpiar_pantalla()
             self.interfaz.mostrar_menu_principal()
+            # Nota: opción adicional para iniciar la vista Pygame (ventana)
+            print("7. Iniciar Vista Pygame (ventana)")
             opcion = input("\nSeleccione opcion: ").strip()
             if opcion == '1':
-                # Ofrecer modos: 1=CLI interactivo, 2=Automático ASCII, 3=GUI (ventana)
-                modo = input("Modo de simulación: 1=CLI interactivo, 2=Automático ASCII, 3=GUI ventana [1]: ").strip() or '1'
-                if modo == '2':
-                    self._iniciar_simulacion_nueva(auto=True)
-                elif modo == '3':
-                    if InterfazGrafica is None:
-                        self.interfaz.mostrar_error("GUI no disponible en este entorno")
-                        input("Enter...")
-                    else:
-                        self._iniciar_simulacion_nueva(auto=False)
-                        # iniciar GUI y la simulación en background
-                        self._iniciar_gui_y_simulacion()
-                else:
-                    self._iniciar_simulacion_nueva()
+                # Opción por defecto: iniciar la simulación con la vista Pygame (ventana)
+                self._iniciar_simulacion_con_pygame()
             elif opcion == '2': self._guardar_partida_manual()
             elif opcion == '3': self._cargar_partida()
             elif opcion == '4': self._configurar_autoguardado()
             elif opcion == '5': self._ver_partidas_guardadas()
+            elif opcion == '7':
+                # Iniciar vista pygame independiente
+                if VistaPygame is None:
+                    self.interfaz.mostrar_error('Vista pygame no disponible')
+                    input('Enter...')
+                else:
+                    vp = VistaPygame()
+                    vp.iniciar()
             elif opcion == '6': self.interfaz.mostrar_mensaje("Hasta luego!"); break
             else: self.interfaz.mostrar_error("Opcion no valida"); input("Enter...")
 
@@ -147,6 +149,27 @@ class ControladorSimulador:
         finally:
             # cuando la GUI se cierre, detener la simulación
             self.en_simulacion = False
+
+    def _iniciar_simulacion_con_pygame(self):
+        """Crea el ecosistema, lo inicializa y arranca la vista Pygame que lo renderiza.
+        La vista controlará el avance de ciclos y proveerá botones para pausar/guardar.
+        """
+        config = {'autoguardado_cada_n_ciclos': self.autoguardado_cada_n_ciclos, 'version': '1.0'}
+        self.ecosistema = Ecosistema(config)
+        self._inicializar_ecosistema()
+        if VistaPygame is None:
+            # fallback a modo CLI/ASCII si pygame no está disponible
+            self._ejecutar_simulacion(auto_mode=True)
+            return
+
+        # Instanciar vista pasando el ecosistema
+        vp = VistaPygame(ecosistema=self.ecosistema)
+        try:
+            vp.iniciar()
+        except Exception as e:
+            self.interfaz.mostrar_error(f"Error en Vista Pygame: {e}")
+            # fallback: ejecutar modo ASCII interactivo
+            self._ejecutar_simulacion(auto_mode=True)
 
     def _render_ascii(self, width: int = 80, height: int = 20):
         """Render ASCII simple del ecosistema en la consola.

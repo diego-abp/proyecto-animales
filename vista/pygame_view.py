@@ -152,6 +152,11 @@ class VistaPygame:
         for i, lab in enumerate(labels):
             self.buttons.append((x0, y0 + i*(btn_h+6), btn_w, btn_h, lab))
         self._last_save_msg = None
+        
+        # Modal de carga
+        self.show_load_menu = False
+        self.load_menu_items = []  # list of (slot_name, meta_dict)
+        self.selected_load_index = 0
 
     def _draw_hp_bar(self, entity, y_offset=-20, width=36, height=6, color_healthy=(0,200,0), color_low=(200,0,0), low_threshold=0.3):
         try:
@@ -163,6 +168,68 @@ class VistaPygame:
         pygame.draw.rect(self.screen, (50,50,50), (x, y, width, height))
         color = color_healthy if hp_percent > low_threshold else color_low
         pygame.draw.rect(self.screen, color, (x, y, int(width * hp_percent), height))
+
+    def _draw_load_menu(self):
+        """Dibuja un menú modal para seleccionar qué guardado cargar."""
+        # Dimensiones del menú
+        menu_width, menu_height = 400, 300
+        menu_x = (self.ancho - menu_width) // 2
+        menu_y = (self.alto - menu_height) // 2
+        
+        # Fondo semi-transparente para oscurecer el fondo
+        overlay = pygame.Surface((self.ancho, self.alto), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Caja del menú
+        pygame.draw.rect(self.screen, (40, 40, 40), (menu_x, menu_y, menu_width, menu_height))
+        pygame.draw.rect(self.screen, (200, 200, 200), (menu_x, menu_y, menu_width, menu_height), 2)
+        
+        # Título
+        title_surf = self.font.render("Selecciona un guardado para cargar:", True, (255, 255, 255))
+        self.screen.blit(title_surf, (menu_x + 10, menu_y + 10))
+        
+        # Listar guardados con fondo seleccionado
+        item_height = 30
+        start_y = menu_y + 40
+        for i, (slot_name, meta) in enumerate(self.load_menu_items):
+            item_y = start_y + i * item_height
+            if item_y > menu_y + menu_height - 40:
+                break
+            # Fondo del ítem (resaltado si está seleccionado)
+            if i == self.selected_load_index:
+                pygame.draw.rect(self.screen, (100, 100, 150), (menu_x + 5, item_y, menu_width - 10, item_height - 5))
+            # Texto: "Ciclo X - Fecha"
+            try:
+                ciclo = meta.get('ciclo', '?')
+                fecha = meta.get('fecha', 'N/A')
+                item_text = f"{slot_name} [Ciclo {ciclo} - {fecha}]"
+            except Exception:
+                item_text = slot_name
+            item_surf = self.font.render(item_text[:50], True, (240, 240, 240))
+            self.screen.blit(item_surf, (menu_x + 10, item_y + 5))
+        
+        # Botones de acción
+        btn_y = menu_y + menu_height - 30
+        btn_w, btn_h = 80, 25
+        
+        # Botón "Cargar"
+        load_rect = pygame.Rect(menu_x + 20, btn_y, btn_w, btn_h)
+        pygame.draw.rect(self.screen, (50, 100, 50), load_rect)
+        pygame.draw.rect(self.screen, (150, 255, 150), load_rect, 1)
+        load_surf = self.font.render("Cargar", True, (255, 255, 255))
+        self.screen.blit(load_surf, (load_rect.x + 10, load_rect.y + 3))
+        
+        # Botón "Cancelar"
+        cancel_rect = pygame.Rect(menu_x + menu_width - 100, btn_y, btn_w, btn_h)
+        pygame.draw.rect(self.screen, (100, 50, 50), cancel_rect)
+        pygame.draw.rect(self.screen, (255, 150, 150), cancel_rect, 1)
+        cancel_surf = self.font.render("Cancelar", True, (255, 255, 255))
+        self.screen.blit(cancel_surf, (cancel_rect.x + 5, cancel_rect.y + 3))
+        
+        # Guardar rects para detección de clicks
+        self.load_menu_load_rect = load_rect
+        self.load_menu_cancel_rect = cancel_rect
 
     def check_reproduction(self):
         nuevas_especies = {}
@@ -402,6 +469,9 @@ class VistaPygame:
         for x,y,w,h,label in self.buttons:
             pygame.draw.rect(self.screen, (30,30,30), (x,y,w,h))
             pygame.draw.rect(self.screen, (200,200,200), (x,y,w,h), 1)
+            # Cambiar color del botón Pause si está pausado
+            if label == 'Pause' and self.paused:
+                pygame.draw.rect(self.screen, (100,50,50), (x,y,w,h))
             txt = self.font.render(label, True, (240,240,240))
             self.screen.blit(txt, (x+8, y+6))
         # HUD: ciclo/estadísticas si ecosistema
@@ -432,6 +502,17 @@ class VistaPygame:
         except Exception:
             pass
 
+        # Mostrar indicación de pausa si está pausado
+        if self.paused:
+            paused_text = "PAUSADO"
+            paused_surf = self.font.render(paused_text, True, (255, 100, 100))
+            paused_rect = paused_surf.get_rect(center=(self.ancho // 2, 60))
+            self.screen.blit(paused_surf, paused_rect)
+
+        # Dibujar menú de carga si está abierto
+        if self.show_load_menu:
+            self._draw_load_menu()
+
         pygame.display.flip()
 
     def handle_event(self, event):
@@ -439,10 +520,38 @@ class VistaPygame:
             self.running = False
         elif event.type == pygame.MOUSEBUTTONDOWN:
             mx, my = event.pos
+            
+            # Si el menú de carga está abierto, procesar clicks en el menú
+            if self.show_load_menu:
+                # Scroll: UP/DOWN entre items
+                item_height = 30
+                start_y = (self.alto - 300) // 2 + 40
+                for i, (slot_name, meta) in enumerate(self.load_menu_items):
+                    item_y = start_y + i * item_height
+                    if (self.alto - 300) // 2 + 300 - 40 < item_y:
+                        break
+                    if item_y <= my <= item_y + item_height:
+                        self.selected_load_index = i
+                        break
+                
+                # Botón "Cargar"
+                if hasattr(self, 'load_menu_load_rect') and self.load_menu_load_rect.collidepoint(mx, my):
+                    if self.load_menu_items and 0 <= self.selected_load_index < len(self.load_menu_items):
+                        slot_name, meta = self.load_menu_items[self.selected_load_index]
+                        self._do_load_game(slot_name, meta)
+                    self.show_load_menu = False
+                
+                # Botón "Cancelar"
+                if hasattr(self, 'load_menu_cancel_rect') and self.load_menu_cancel_rect.collidepoint(mx, my):
+                    self.show_load_menu = False
+                return
+            
+            # Si no está el menú de carga, procesar clicks en los botones normales
             for x,y,w,h,label in self.buttons:
                 if x <= mx <= x+w and y <= my <= y+h:
                     if label == 'Pause':
                         self.paused = not self.paused
+                        self._last_save_msg = "PAUSADO" if self.paused else "Reanudado"
                     elif label == 'Guardar':
                         # guardar con nombre timestamp
                         if self.ecosistema is not None:
@@ -451,101 +560,140 @@ class VistaPygame:
                             exitoso, msg = self.gestor.guardar(slot, self.ecosistema, meta)
                             self._last_save_msg = msg if isinstance(msg, str) else str(msg)
                     elif label == 'Cargar':
-                        try:
-                            guardados = self.gestor.listar_guardados()
-                            if not guardados:
-                                self._last_save_msg = 'No hay guardados'
-                            else:
-                                latest = None
-                                latest_date = None
-                                for k,v in guardados.items():
-                                    fecha = v.get('fecha') if isinstance(v, dict) else None
-                                    if fecha:
-                                        if latest_date is None or fecha > latest_date:
-                                            latest_date = fecha; latest = k
-                                if latest is None:
-                                    latest = list(guardados.keys())[-1]
-                                exitoso, meta, datos = self.gestor.cargar(latest)
-                                if exitoso:
-                                    try:
-                                        new_ec = Ecosistema(meta.get('config', {}))
-                                        if hasattr(new_ec, 'deserializar'):
-                                            new_ec.deserializar(datos)
-                                            self.ecosistema = new_ec
-                                            self.especies_vivas = {**getattr(self.ecosistema, 'animales', {}), **getattr(self.ecosistema, 'plantas', {})}
-                                            self._last_save_msg = f'Guardado {latest} cargado'
-                                        else:
-                                            self._last_save_msg = 'Carga: deserializar no soportado'
-                                    except Exception as e:
-                                        self._last_save_msg = f'Error al cargar: {e}'
-                                else:
-                                    self._last_save_msg = str(meta)
-                        except Exception as e:
-                            self._last_save_msg = f'Error: {e}'
+                        # Mostrar el menú de selección de guardados
+                        self._prepare_load_menu()
                     elif label == 'Salir':
                         self.running = False
                     break
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                self.running = False
+                if self.show_load_menu:
+                    self.show_load_menu = False
+                else:
+                    self.running = False
+            elif event.key == pygame.K_UP or event.key == pygame.K_w:
+                # Navegación en el menú de carga si está abierto
+                if self.show_load_menu:
+                    self.selected_load_index = max(0, self.selected_load_index - 1)
+                else:
+                    # Ataque espacial no se debe hacer aquí
+                    pass
+            elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
+                # Navegación en el menú de carga si está abierto
+                if self.show_load_menu:
+                    self.selected_load_index = min(len(self.load_menu_items) - 1, self.selected_load_index + 1)
+                else:
+                    pass
+            elif event.key == pygame.K_RETURN:
+                # Confirmar selección en el menú de carga
+                if self.show_load_menu and self.load_menu_items and 0 <= self.selected_load_index < len(self.load_menu_items):
+                    slot_name, meta = self.load_menu_items[self.selected_load_index]
+                    self._do_load_game(slot_name, meta)
+                    self.show_load_menu = False
             elif event.key == pygame.K_SPACE:
-                ahora = time.time()
-                if ahora - self.personaje.last_attack_time >= self.personaje.attack_cooldown:
-                    self.personaje.last_attack_time = ahora
-                    for nombre, especie in self.especies_vivas.items():
-                        dist = math.hypot(self.personaje.posicion_x - especie.posicion_x, self.personaje.posicion_y - especie.posicion_y)
-                        if dist < self.personaje.attack_range:
-                            damage_dealt = self.personaje.attack_power
-                            try:
-                                if hasattr(especie, 'take_damage'):
-                                    especie.take_damage(self.personaje, damage_dealt)
-                                else:
-                                    # si la entidad no implementa take_damage, restar vida directamente si es posible
-                                    if hasattr(especie, 'vida'):
-                                        especie.vida = max(0, especie.vida - damage_dealt)
-                            except Exception:
-                                pass
-                            self.damage_popups.append({'text': f"-{int(damage_dealt)}", 'x': getattr(especie, 'posicion_x', 0), 'y': getattr(especie, 'posicion_y', 0) - 10, 'start': pygame.time.get_ticks()})
-                            break
+                if not self.show_load_menu:
+                    ahora = time.time()
+                    if ahora - self.personaje.last_attack_time >= self.personaje.attack_cooldown:
+                        self.personaje.last_attack_time = ahora
+                        for nombre, especie in self.especies_vivas.items():
+                            dist = math.hypot(self.personaje.posicion_x - especie.posicion_x, self.personaje.posicion_y - especie.posicion_y)
+                            if dist < self.personaje.attack_range:
+                                damage_dealt = self.personaje.attack_power
+                                try:
+                                    if hasattr(especie, 'take_damage'):
+                                        especie.take_damage(self.personaje, damage_dealt)
+                                    else:
+                                        # si la entidad no implementa take_damage, restar vida directamente si es posible
+                                        if hasattr(especie, 'vida'):
+                                            especie.vida = max(0, especie.vida - damage_dealt)
+                                except Exception:
+                                    pass
+                                self.damage_popups.append({'text': f"-{int(damage_dealt)}", 'x': getattr(especie, 'posicion_x', 0), 'y': getattr(especie, 'posicion_y', 0) - 10, 'start': pygame.time.get_ticks()})
+                                break
+
+    def _prepare_load_menu(self):
+        """Prepara la lista de guardados y abre el menú de selección."""
+        try:
+            guardados = self.gestor.listar_guardados()
+            self.load_menu_items = []
+            if guardados:
+                for slot_name, meta_info in guardados.items():
+                    if isinstance(meta_info, dict):
+                        self.load_menu_items.append((slot_name, meta_info))
+                    else:
+                        # fallback si el formato es diferente
+                        self.load_menu_items.append((slot_name, {'ciclo': 0, 'fecha': 'N/A'}))
+                self.selected_load_index = 0
+                self.show_load_menu = True
+                self._last_save_msg = "Selecciona un guardado"
+            else:
+                self._last_save_msg = "No hay guardados disponibles"
+        except Exception as e:
+            self._last_save_msg = f"Error al listar guardados: {e}"
+
+    def _do_load_game(self, slot_name, meta):
+        """Carga el juego desde un slot específico."""
+        try:
+            exitoso, meta_data, datos = self.gestor.cargar(slot_name)
+            if exitoso:
+                try:
+                    new_ec = Ecosistema(meta.get('config', {}))
+                    if hasattr(new_ec, 'deserializar'):
+                        new_ec.deserializar(datos)
+                        self.ecosistema = new_ec
+                        self.especies_vivas = {**getattr(self.ecosistema, 'animales', {}), **getattr(self.ecosistema, 'plantas', {})}
+                        self._last_save_msg = f'Guardado {slot_name} cargado'
+                    else:
+                        self._last_save_msg = 'Carga: deserializar no soportado'
+                except Exception as e:
+                    self._last_save_msg = f'Error al cargar: {e}'
+            else:
+                self._last_save_msg = f'Error: {meta_data}'
+        except Exception as e:
+            self._last_save_msg = f'Error: {e}'
 
     def iniciar(self):
         self.running = True
         while self.running:
             for event in pygame.event.get():
                 self.handle_event(event)
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_ESCAPE]:
-                self.running = False
-            dx, dy = 0, 0
-            if keys[pygame.K_UP] or keys[pygame.K_w]:
-                dy = -1
-            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-                dy = 1
-            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-                dx = -1
-            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-                dx = 1
-            if dx != 0 or dy != 0:
-                if dy < 0:
-                    self.personaje.mover_arriba()
-                elif dy > 0:
-                    self.personaje.mover_abajo()
-                if dx < 0 and dy == 0:
-                    self.personaje.mover_izquierda()
-                elif dx > 0 and dy == 0:
-                    self.personaje.mover_derecha()
+            
+            # Si está pausado, no hacer nada de la lógica del juego
+            if not self.paused:
+                keys = pygame.key.get_pressed()
+                if keys[pygame.K_ESCAPE]:
+                    self.running = False
+                dx, dy = 0, 0
+                if keys[pygame.K_UP] or keys[pygame.K_w]:
+                    dy = -1
+                if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                    dy = 1
+                if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                    dx = -1
+                if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                    dx = 1
+                if dx != 0 or dy != 0:
+                    if dy < 0:
+                        self.personaje.mover_arriba()
+                    elif dy > 0:
+                        self.personaje.mover_abajo()
+                    if dx < 0 and dy == 0:
+                        self.personaje.mover_izquierda()
+                    elif dx > 0 and dy == 0:
+                        self.personaje.mover_derecha()
 
-            if getattr(self.personaje, 'ticks_velocidad', 0) > 0:
-                self.personaje.ticks_velocidad -= 1
-                if self.personaje.ticks_velocidad == 0:
-                    self.personaje.velocidad_extra = 0
+                if getattr(self.personaje, 'ticks_velocidad', 0) > 0:
+                    self.personaje.ticks_velocidad -= 1
+                    if self.personaje.ticks_velocidad == 0:
+                        self.personaje.velocidad_extra = 0
 
-            self._update_ai()
-            self.check_reproduction()
-            self._check_emergency_reproduction()
-            self._update_plant_healing()
-            self._update_growth()
-            self._resolve_collisions()
+                self._update_ai()
+                self.check_reproduction()
+                self._check_emergency_reproduction()
+                self._update_plant_healing()
+                self._update_growth()
+                self._resolve_collisions()
+            
             self.draw()
             self.clock.tick(self.fps)
         pygame.quit()

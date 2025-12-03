@@ -91,10 +91,39 @@ class Ecosistema:
 
     def serializar(self):
         """Serializa el estado completo del ecosistema."""
+        # Serializar animales
+        animales_serializados = {}
+        for nombre, animal in self.animales.items():
+            if hasattr(animal, 'serializar'):
+                animales_serializados[nombre] = animal.serializar()
+            else:
+                # Fallback: crear dict básico
+                animales_serializados[nombre] = {
+                    'tipo': animal.__class__.__name__,
+                    'posicion': (animal.posicion_x, animal.posicion_y),
+                    'vida': animal.vida,
+                    'vida_max': animal.vida_max,
+                    'color': animal.color,
+                    'is_baby': getattr(animal, 'is_baby', False),
+                    'is_champion': getattr(animal, 'is_champion', False),
+                }
+        
+        # Serializar plantas
+        plantas_serializadas = {}
+        for nombre, planta in self.plantas.items():
+            if hasattr(planta, 'serializar'):
+                plantas_serializadas[nombre] = planta.serializar()
+            else:
+                plantas_serializadas[nombre] = {
+                    'tipo': 'Planta',
+                    'posicion': (planta.posicion_x, planta.posicion_y),
+                    'vida': float('inf'),
+                }
+        
         return {
             'ciclo': self.ciclo,
-            'animales': self.animales,
-            'plantas': self.plantas,
+            'animales': animales_serializados,
+            'plantas': plantas_serializadas,
             'estado': self.estado,
             'config': self.config,
             'version': self.version,
@@ -102,9 +131,50 @@ class Ecosistema:
 
     def deserializar(self, datos):
         """Restaura el ecosistema desde datos serializados."""
+        from .carnivoro import Carnivoro
+        from .herbivoro import Herbivoro
+        from .omnivoro import Omnivoro
+        from .planta import Planta
+        
         self.ciclo = datos.get('ciclo', 0)
         self.estado = datos.get('estado', 'Normal')
         self.config = datos.get('config', {})
         self.version = datos.get('version', '1.0')
-        # Los animales y plantas se restauran en un nivel superior
+        
+        # Restaurar animales
+        animales_datos = datos.get('animales', {})
+        for nombre, animal_data in animales_datos.items():
+            tipo = animal_data.get('tipo', 'Herbivoro')
+            x, y = animal_data.get('posicion', (0, 0))
+            vida = animal_data.get('vida', 100)
+            is_baby = animal_data.get('is_baby', False)
+            is_champion = animal_data.get('is_champion', False)
+            color = animal_data.get('color', (0, 200, 0))
+            
+            try:
+                if tipo == 'Carnivoro':
+                    animal = Carnivoro(x, y, vida, is_baby=is_baby)
+                    animal.is_champion = is_champion
+                    animal.color = color
+                elif tipo == 'Omnivoro':
+                    animal = Omnivoro(x, y, vida, is_baby=is_baby, is_champion=is_champion)
+                    animal.color = color
+                else:  # Herbivoro por defecto
+                    animal = Herbivoro(x, y, vida, is_baby=is_baby)
+                    animal.is_champion = is_champion
+                    animal.color = color
+                
+                self.agregar_animal(nombre, animal)
+            except Exception as e:
+                print(f"Advertencia: No se pudo restaurar animal {nombre}: {e}")
+        
+        # Restaurar plantas
+        plantas_datos = datos.get('plantas', {})
+        for nombre, planta_data in plantas_datos.items():
+            x, y = planta_data.get('posicion', (0, 0))
+            try:
+                planta = Planta(x, y)
+                self.agregar_planta(nombre, planta)
+            except Exception as e:
+                print(f"Advertencia: No se pudo restaurar planta {nombre}: {e}")
 

@@ -33,11 +33,8 @@ class GestorGuardado:
         Args:
             slot: Nombre del slot de guardado
             ecosistema: Objeto del ecosistema a guardar
-            meta: Diccionario con metadatos (se genera automáticamente si no se proporciona)
+            meta: (Ignorado) Se mantiene por compatibilidad
         """
-        if meta is None:
-            meta = self._generar_metadatos(ecosistema)
-        
         slot_limpio = self._sanitizar_nombre_slot(slot)
         save_path = os.path.join(self.carpeta_guardados, f'{slot_limpio}.json')
         
@@ -48,11 +45,11 @@ class GestorGuardado:
         # Validación: crear archivo temporal primero
         temp_path = os.path.join(self.carpeta_guardados, f'{slot_limpio}_tmp.json')
         try:
+            # Estructura simple: solo datos y timestamp
             datos_guardado = {
-                'meta': meta,
-                'datos': ecosistema.serializar() if hasattr(ecosistema, 'serializar') else ecosistema,
+                'timestamp': datetime.now().isoformat(),
                 'version': self.version_actual,
-                'timestamp_guardado': datetime.now().isoformat()
+                'data': ecosistema.serializar() if hasattr(ecosistema, 'serializar') else ecosistema,
             }
             
             with open(temp_path, 'w', encoding='utf-8') as f:
@@ -77,7 +74,7 @@ class GestorGuardado:
             slot: Nombre del slot a cargar
             
         Returns:
-            Tupla (exitoso, metadatos, datos) o (False, mensaje_error, None)
+            Tupla (exitoso, datos_ecosistema, None) o (False, mensaje_error, None)
         """
         slot_limpio = self._sanitizar_nombre_slot(slot)
         save_path = os.path.join(self.carpeta_guardados, f'{slot_limpio}.json')
@@ -94,11 +91,10 @@ class GestorGuardado:
             if not self._validar_version(version_guardada):
                 return False, f"Versión incompatible. Guardada: {version_guardada}, Actual: {self.version_actual}", None
             
-            meta = contenido.get('meta', {})
-            datos = contenido.get('datos', {})
+            datos = contenido.get('data', {})
             
-            return True, meta, datos
-        
+            return True, datos, None
+            
         except json.JSONDecodeError:
             return False, f"Archivo corrupto: '{slot_limpio}'. Intente cargar desde backup.", None
         except Exception as e:
@@ -106,10 +102,10 @@ class GestorGuardado:
 
     def listar_guardados(self):
         """
-        Lista todos los guardados disponibles con sus metadatos.
+        Lista todos los guardados disponibles.
         
         Returns:
-            Diccionario {slot_name: metadatos}
+            Diccionario {slot_name: {"timestamp": fecha}}
         """
         guardados = {}
         try:
@@ -121,9 +117,10 @@ class GestorGuardado:
                     try:
                         with open(archivo_path, 'r', encoding='utf-8') as f:
                             contenido = json.load(f)
-                        guardados[slot_name] = contenido.get('meta', {})
+                        timestamp = contenido.get('timestamp', 'N/A')
+                        guardados[slot_name] = {'timestamp': timestamp}
                     except:
-                        guardados[slot_name] = {'error': 'Archivo corrupto'}
+                        guardados[slot_name] = {'timestamp': 'Corrupto'}
         except Exception as e:
             print(f"Error al listar guardados: {e}")
         
@@ -149,7 +146,7 @@ class GestorGuardado:
             slot: Nombre del slot
             
         Returns:
-            Tupla (exitoso, metadatos, datos)
+            Tupla (exitoso, datos_ecosistema, None)
         """
         try:
             # Buscar el backup más reciente
@@ -168,28 +165,12 @@ class GestorGuardado:
             with open(backup_path, 'r', encoding='utf-8') as f:
                 contenido = json.load(f)
             
-            meta = contenido.get('meta', {})
-            datos = contenido.get('datos', {})
+            datos = contenido.get('data', {})
             
-            return True, meta, datos
+            return True, datos, None
         
         except Exception as e:
             return False, f"Error al cargar desde backup: {str(e)}", None
-
-    def _generar_metadatos(self, ecosistema):
-        """Genera metadatos automáticamente para un guardado."""
-        resumen = ecosistema.resumen() if hasattr(ecosistema, 'resumen') else {}
-        
-        return {
-            'fecha': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'ciclo': resumen.get('ciclo', 0),
-            'animales': resumen.get('animales', 0),
-            'plantas': resumen.get('plantas', 0),
-            'estado': resumen.get('estado', 'Desconocido'),
-            'tipos_animales': resumen.get('tipos_animales', {}),
-            'config': resumen.get('config', {}),
-            'version': self.version_actual
-        }
 
     def _sanitizar_nombre_slot(self, nombre):
         """Sanitiza el nombre del slot (remove caracteres peligrosos)."""

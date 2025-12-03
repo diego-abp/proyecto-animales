@@ -188,3 +188,7 @@ class Especies:
         """Reconstruye una especie desde un diccionario."""
         # Este método será sobrescrito en subclases
         pass
+
+
+# Importar al final para evitar circular imports
+from .planta import Planta

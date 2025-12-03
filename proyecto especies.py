@@ -94,8 +94,7 @@ class ControladorSimulador:
                     print(f"Ciclo: {resumen['ciclo']}  Animales: {resumen['animales']}  Plantas: {resumen['plantas']}  Estado: {resumen['estado']}")
                     self._render_ascii()
                     if self.ecosistema.necesita_autoguardado():
-                        meta = self._generar_metadatos()
-                        exitoso, msg = self.gestor_guardado.guardar('autoguardado', self.ecosistema, meta)
+                        exitoso, msg = self.gestor_guardado.guardar('autoguardado', self.ecosistema)
                         if exitoso: self.interfaz.mostrar_autoguardado('autoguardado')
                         self.ecosistema.reset_ciclos_autoguardado()
                     time.sleep(max(0.05, delay))
@@ -110,8 +109,7 @@ class ControladorSimulador:
                         self._avanzar_ciclo()
                         self.interfaz.mostrar_estado_simulacion(self.ecosistema.resumen())
                         if self.ecosistema.necesita_autoguardado():
-                            meta = self._generar_metadatos()
-                            exitoso, msg = self.gestor_guardado.guardar('autoguardado', self.ecosistema, meta)
+                            exitoso, msg = self.gestor_guardado.guardar('autoguardado', self.ecosistema)
                             if exitoso: self.interfaz.mostrar_autoguardado('autoguardado')
                             self.ecosistema.reset_ciclos_autoguardado()
                     elif entrada == 'G': self._guardar_partida_manual()
@@ -135,8 +133,7 @@ class ControladorSimulador:
                 while self.en_simulacion:
                     self._avanzar_ciclo()
                     if self.ecosistema.necesita_autoguardado():
-                        meta = self._generar_metadatos()
-                        exitoso, msg = self.gestor_guardado.guardar('autoguardado', self.ecosistema, meta)
+                        exitoso, msg = self.gestor_guardado.guardar('autoguardado', self.ecosistema)
                         if exitoso: self.interfaz.mostrar_autoguardado('autoguardado')
                         self.ecosistema.reset_ciclos_autoguardado()
                     time.sleep(0.5)
@@ -209,8 +206,7 @@ class ControladorSimulador:
         if not self.ecosistema: self.interfaz.mostrar_error("No hay simulacion"); return
         slot = self.interfaz.solicitar_nombre_slot()
         if slot:
-            meta = self._generar_metadatos()
-            exitoso, msg = self.gestor_guardado.guardar(slot, self.ecosistema, meta)
+            exitoso, msg = self.gestor_guardado.guardar(slot, self.ecosistema)
             self.interfaz.mostrar_mensaje(msg) if exitoso else self.interfaz.mostrar_error(msg)
         input("Enter...")
 
@@ -219,14 +215,19 @@ class ControladorSimulador:
         if not guardados: self.interfaz.mostrar_error("Sin partidas"); input("Enter..."); return
         self.interfaz.mostrar_guardados(guardados)
         slot = self.interfaz.solicitar_seleccion_slot()
-        exitoso, meta, datos = self.gestor_guardado.cargar(slot)
+        exitoso, datos, _ = self.gestor_guardado.cargar(slot)
         if not exitoso:
-            self.interfaz.mostrar_error(meta)
-            if input("Backup? (s/n): ").lower() == 's': exitoso, meta, datos = self.gestor_guardado.cargar_desde_backup(slot)
+            self.interfaz.mostrar_error(datos)
+            if input("Backup? (s/n): ").lower() == 's': exitoso, datos, _ = self.gestor_guardado.cargar_desde_backup(slot)
             if not exitoso: input("Enter..."); return
-        if self.interfaz.mostrar_confirmacion_carga(meta):
-            self.ecosistema = Ecosistema(meta.get('config', {}))
+        # Crear nuevo ecosistema y restaurar desde datos
+        self.ecosistema = Ecosistema({})
+        try:
+            self.ecosistema.deserializar(datos)
+            self.interfaz.mostrar_mensaje(f"Partida cargada: Ciclo {self.ecosistema.ciclo}, {len(self.ecosistema.animales)} animales, {len(self.ecosistema.plantas)} plantas")
             self._ejecutar_simulacion()
+        except Exception as e:
+            self.interfaz.mostrar_error(f"Error al cargar partida: {e}")
         input("Enter...")
 
     def _configurar_autoguardado(self):
@@ -240,12 +241,9 @@ class ControladorSimulador:
         self.gestor_guardado.limpiar_backups_antiguos(dias=7)
         input("Enter...")
 
-    def _generar_metadatos(self):
-        resumen = self.ecosistema.resumen()
-        return {'fecha': datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'ciclo': resumen['ciclo'], 'animales': resumen['animales'], 'plantas': resumen['plantas'], 'estado': resumen['estado'], 'tipos_animales': resumen['tipos_animales'], 'config': self.ecosistema.config, 'version': '1.0'}
-
 def main():
     try: ControladorSimulador().iniciar()
     except Exception as e: print(f"Error critico: {e}"); import traceback; traceback.print_exc()
 
 if __name__ == '__main__': main()
+

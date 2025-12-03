@@ -1,0 +1,199 @@
+{
+  "timestamp": "2025-12-03T08:44:39.818049",
+  "version": "1.0",
+  "data": {
+    "ciclo": 0,
+    "animales": {
+      "carnivoro_1_6091": {
+        "tipo": "Carnivoro",
+        "posicion": [
+          525.5904969139447,
+          595.8565719235561
+        ],
+        "vida": 71.92268530527748,
+        "vida_max": 100,
+        "color": [
+          255,
+          0,
+          0
+        ],
+        "is_baby": false,
+        "is_champion": false,
+        "hunt_state": "chasing",
+        "attack_power": 25
+      },
+      "carnivoro_2_6091": {
+        "tipo": "Carnivoro",
+        "posicion": [
+          608.0119472751923,
+          578.1985728916719
+        ],
+        "vida": 96.92271868387867,
+        "vida_max": 100,
+        "color": [
+          255,
+          0,
+          0
+        ],
+        "is_baby": false,
+        "is_champion": false,
+        "hunt_state": "chasing",
+        "attack_power": 25
+      },
+      "herbivoro_1_6091": {
+        "tipo": "Herbivoro",
+        "posicion": [
+          803.5003290770977,
+          221.47745664222572
+        ],
+        "vida": 96.92273636658992,
+        "vida_max": 100,
+        "color": [
+          0,
+          200,
+          0
+        ],
+        "is_baby": false,
+        "is_champion": false
+      },
+      "herbivoro_2_6091": {
+        "tipo": "Herbivoro",
+        "posicion": [
+          741.7946266568697,
+          629.6022631006613
+        ],
+        "vida": 96.92274570465081,
+        "vida_max": 100,
+        "color": [
+          0,
+          200,
+          0
+        ],
+        "is_baby": false,
+        "is_champion": false
+      },
+      "omnivoro_1_6091": {
+        "tipo": "Omnivoro",
+        "posicion": [
+          760.7402109657406,
+          183.04701047891297
+        ],
+        "vida": 96.92275623480474,
+        "vida_max": 100,
+        "color": [
+          128,
+          0,
+          128
+        ],
+        "is_baby": false,
+        "is_champion": false,
+        "modo_caza": false
+      },
+      "omnivoro_2_6091": {
+        "tipo": "Omnivoro",
+        "posicion": [
+          303.24417558295033,
+          34.14919978224951
+        ],
+        "vida": 96.92276875178015,
+        "vida_max": 100,
+        "color": [
+          128,
+          0,
+          128
+        ],
+        "is_baby": false,
+        "is_champion": false,
+        "modo_caza": false
+      }
+    },
+    "plantas": {
+      "planta_1_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          810,
+          644
+        ],
+        "vida": Infinity
+      },
+      "planta_2_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          24,
+          40
+        ],
+        "vida": Infinity
+      },
+      "planta_3_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          186,
+          218
+        ],
+        "vida": Infinity
+      },
+      "planta_4_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          393,
+          86
+        ],
+        "vida": Infinity
+      },
+      "planta_5_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          532,
+          414
+        ],
+        "vida": Infinity
+      },
+      "planta_6_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          333,
+          380
+        ],
+        "vida": Infinity
+      },
+      "planta_7_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          26,
+          387
+        ],
+        "vida": Infinity
+      },
+      "planta_8_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          332,
+          243
+        ],
+        "vida": Infinity
+      },
+      "planta_9_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          778,
+          513
+        ],
+        "vida": Infinity
+      },
+      "planta_10_6091": {
+        "tipo": "Planta",
+        "posicion": [
+          167,
+          81
+        ],
+        "vida": Infinity
+      }
+    },
+    "estado": "Normal",
+    "config": {
+      "autoguardado_cada_n_ciclos": 10,
+      "version": "1.0"
+    },
+    "version": "1.0"
+  }
+}

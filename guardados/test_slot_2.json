@@ -1,0 +1,199 @@
+{
+  "timestamp": "2025-12-03T08:43:59.202401",
+  "version": "1.0",
+  "data": {
+    "ciclo": 6,
+    "animales": {
+      "carnivoro_1": {
+        "tipo": "Carnivoro",
+        "posicion": [
+          339,
+          59
+        ],
+        "vida": 99.99965727358467,
+        "vida_max": 99.99984105428061,
+        "color": [
+          255,
+          0,
+          0
+        ],
+        "is_baby": false,
+        "is_champion": false,
+        "hunt_state": "wandering",
+        "attack_power": 25
+      },
+      "carnivoro_2": {
+        "tipo": "Carnivoro",
+        "posicion": [
+          266,
+          601
+        ],
+        "vida": 99.99969542049638,
+        "vida_max": 99.99985635280609,
+        "color": [
+          255,
+          0,
+          0
+        ],
+        "is_baby": false,
+        "is_champion": false,
+        "hunt_state": "wandering",
+        "attack_power": 25
+      },
+      "herbivoro_1": {
+        "tipo": "Herbivoro",
+        "posicion": [
+          201,
+          205
+        ],
+        "vida": 99.99971687813718,
+        "vida_max": 99.99986569086711,
+        "color": [
+          0,
+          200,
+          0
+        ],
+        "is_baby": false,
+        "is_champion": false
+      },
+      "herbivoro_2": {
+        "tipo": "Herbivoro",
+        "posicion": [
+          166,
+          73
+        ],
+        "vida": 99.99973158059603,
+        "vida_max": 99.99987244606018,
+        "color": [
+          0,
+          200,
+          0
+        ],
+        "is_baby": false,
+        "is_champion": false
+      },
+      "omnivoro_1": {
+        "tipo": "Omnivoro",
+        "posicion": [
+          98,
+          196
+        ],
+        "vida": 99.99975462769557,
+        "vida_max": 99.99988516171773,
+        "color": [
+          128,
+          0,
+          128
+        ],
+        "is_baby": false,
+        "is_champion": false,
+        "modo_caza": false
+      },
+      "omnivoro_2": {
+        "tipo": "Omnivoro",
+        "posicion": [
+          737,
+          194
+        ],
+        "vida": 99.99978065502737,
+        "vida_max": 99.99989410241444,
+        "color": [
+          128,
+          0,
+          128
+        ],
+        "is_baby": false,
+        "is_champion": false,
+        "modo_caza": false
+      }
+    },
+    "plantas": {
+      "planta_1": {
+        "tipo": "Planta",
+        "posicion": [
+          611,
+          528
+        ],
+        "vida": Infinity
+      },
+      "planta_2": {
+        "tipo": "Planta",
+        "posicion": [
+          533,
+          669
+        ],
+        "vida": Infinity
+      },
+      "planta_3": {
+        "tipo": "Planta",
+        "posicion": [
+          553,
+          131
+        ],
+        "vida": Infinity
+      },
+      "planta_4": {
+        "tipo": "Planta",
+        "posicion": [
+          489,
+          443
+        ],
+        "vida": Infinity
+      },
+      "planta_5": {
+        "tipo": "Planta",
+        "posicion": [
+          52,
+          492
+        ],
+        "vida": Infinity
+      },
+      "planta_6": {
+        "tipo": "Planta",
+        "posicion": [
+          138,
+          566
+        ],
+        "vida": Infinity
+      },
+      "planta_7": {
+        "tipo": "Planta",
+        "posicion": [
+          926,
+          658
+        ],
+        "vida": Infinity
+      },
+      "planta_8": {
+        "tipo": "Planta",
+        "posicion": [
+          371,
+          502
+        ],
+        "vida": Infinity
+      },
+      "planta_9": {
+        "tipo": "Planta",
+        "posicion": [
+          780,
+          617
+        ],
+        "vida": Infinity
+      },
+      "planta_10": {
+        "tipo": "Planta",
+        "posicion": [
+          443,
+          135
+        ],
+        "vida": Infinity
+      }
+    },
+    "estado": "Normal",
+    "config": {
+      "autoguardado_cada_n_ciclos": 10,
+      "version": "1.0"
+    },
+    "version": "1.0"
+  }
+}

@@ -634,21 +634,18 @@ class VistaPygame:
     def _do_load_game(self, slot_name, meta):
         """Carga el juego desde un slot específico."""
         try:
-            exitoso, meta_data, datos = self.gestor.cargar(slot_name)
+            exitoso, datos, _ = self.gestor.cargar(slot_name)
             if exitoso:
                 try:
-                    new_ec = Ecosistema(meta.get('config', {}))
-                    if hasattr(new_ec, 'deserializar'):
-                        new_ec.deserializar(datos)
-                        self.ecosistema = new_ec
-                        self.especies_vivas = {**getattr(self.ecosistema, 'animales', {}), **getattr(self.ecosistema, 'plantas', {})}
-                        self._last_save_msg = f'Guardado {slot_name} cargado'
-                    else:
-                        self._last_save_msg = 'Carga: deserializar no soportado'
+                    new_ec = Ecosistema({})
+                    new_ec.deserializar(datos)
+                    self.ecosistema = new_ec
+                    self.especies_vivas = {**getattr(self.ecosistema, 'animales', {}), **getattr(self.ecosistema, 'plantas', {})}
+                    self._last_save_msg = f'Guardado {slot_name} cargado correctamente'
                 except Exception as e:
                     self._last_save_msg = f'Error al cargar: {e}'
             else:
-                self._last_save_msg = f'Error: {meta_data}'
+                self._last_save_msg = f'Error: {datos}'
         except Exception as e:
             self._last_save_msg = f'Error: {e}'
 
